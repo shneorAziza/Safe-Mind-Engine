@@ -4,6 +4,8 @@
 
 Implemented.
 
+The dashboard UI is rendered as a React-based single page served by the backend.
+
 This is an internal testing UI, not part of the child app or parent app.
 It can be removed later when the pipeline is stable.
 
@@ -93,6 +95,7 @@ If `start_day` is omitted, the backend returns the last `days` window based on t
 ## Files
 
 - [safe_mind/api/eval_ui.py](../safe_mind/api/eval_ui.py)
+- [safe_mind/api/eval_ui_react.py](../safe_mind/api/eval_ui_react.py)
 - [safe_mind/main.py](../safe_mind/main.py)
 - [safe_mind/pipeline.py](../safe_mind/pipeline.py)
 - [safe_mind/alerts/engine.py](../safe_mind/alerts/engine.py)

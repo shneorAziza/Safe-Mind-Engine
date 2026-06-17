@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from safe_mind.alerts.engine import build_alert_timeline
 from safe_mind.alerts.models import AlertTimelineDay
+from safe_mind.api.eval_ui_react import EVAL_HTML as REACT_EVAL_HTML
 from safe_mind.core.config import settings
 from safe_mind.pipeline import process_message
 from safe_mind.schemas.ingestion import IngestMessageRequest
@@ -58,7 +59,7 @@ class EvalAlertTimelineResponse(BaseModel):
 
 @router.get("/eval", response_class=HTMLResponse)
 def eval_page() -> str:
-    return EVAL_HTML
+    return REACT_EVAL_HTML
 
 
 @router.post("/eval/run", response_model=EvalRunResponse)
