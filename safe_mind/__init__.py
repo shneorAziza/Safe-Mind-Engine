@@ -1,0 +1,2 @@
+"""SafeMind backend package."""
+
