@@ -1,9 +1,8 @@
 from fastapi.testclient import TestClient
 
 import safe_mind.api.eval_ui as eval_ui
-from safe_mind.analysis.models import SignalFeatures
 from safe_mind.main import app
-from safe_mind.storage.vector_store import SignalVectorRecord
+from safe_mind.storage.models import DailySignalRecord
 from uuid import UUID, uuid4
 from datetime import UTC, datetime
 
@@ -47,7 +46,18 @@ def test_eval_run_accepts_multiple_messages_without_vector() -> None:
     assert body["results"][0]["status"] == "no_vector"
 
 
-def test_eval_alert_timeline_returns_empty_user_timeline() -> None:
+def test_eval_alert_timeline_returns_empty_user_timeline(monkeypatch) -> None:
+    class FakeStore:
+        def initialize(self) -> None:
+            return None
+
+        def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
+            return []
+
+        def list_parent_alert_days_for_child(self, child_user_id: UUID) -> list:
+            return []
+
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: FakeStore())
     client = TestClient(app)
 
     response = client.get(
@@ -77,31 +87,33 @@ def test_eval_alert_timeline_defaults_to_last_30_days(monkeypatch) -> None:
         def initialize(self) -> None:
             return None
 
-        def list_signal_vectors_for_child(self, child_user_id: UUID) -> list[SignalVectorRecord]:
+        def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
+            occurred_at = datetime(2026, 6, 30, 12, tzinfo=UTC)
+            scores = {
+                "positive_emotion": 5.0,
+                "negative_emotion": 4.0,
+                "loneliness": 1.0,
+                "anxiety_stress": 1.0,
+                "hopelessness": 1.0,
+                "self_worth_low": 1.0,
+                "risk": 1.0,
+            }
             return [
-                SignalVectorRecord(
+                DailySignalRecord(
                     id=str(uuid4()),
-                    event_id=uuid4(),
                     child_user_id=child_user_id,
-                    device_id=uuid4(),
-                    occurred_at=datetime(2026, 6, 30, 12, tzinfo=UTC),
-                    source_app="test",
-                    embedding_vector=[1.0, 0.0, 0.0],
-                    features=SignalFeatures(
-                        should_store=True,
-                        signal_strength=0.4,
-                        risk_level="low",
-                        confidence=0.9,
-                        provider="heuristic",
-                    ),
-                    pipeline_version="test",
+                    day=occurred_at.date(),
+                    created_at=occurred_at,
+                    updated_at=occurred_at,
+                    message_count=1,
+                    scores=scores,
                 )
             ]
 
         def list_parent_alert_days_for_child(self, child_user_id: UUID) -> list:
             return []
 
-    monkeypatch.setattr(eval_ui, "SQLiteVectorStore", FakeStore)
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: FakeStore("test"))
     client = TestClient(app)
 
     response = client.get(

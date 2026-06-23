@@ -1,10 +1,9 @@
 from safe_mind.alerts.engine import evaluate_parent_alert
-from safe_mind.core.config import settings
-from safe_mind.storage.vector_store import SQLiteVectorStore
+from safe_mind.storage.factory import get_signal_store
 
 
 def main() -> None:
-    store = SQLiteVectorStore(settings.vector_db_path)
+    store = get_signal_store()
     store.initialize()
 
     total_users = 0
@@ -12,7 +11,7 @@ def main() -> None:
     total_saved = 0
 
     for child_user_id in store.list_child_user_ids():
-        records = store.list_signal_vectors_for_child(child_user_id)
+        records = store.list_signal_records_for_child(child_user_id)
         if not records:
             continue
 

@@ -34,7 +34,7 @@ def main() -> None:
         features = result.signal_features
         print(f"[{index}] {text}")
         if features is None:
-            print("  filtered_out")
+            print("  analysis_unavailable")
         else:
             print(
                 "  "
@@ -44,14 +44,6 @@ def main() -> None:
                 f"confidence={features.confidence} "
                 f"provider={features.provider}"
             )
-        print(
-            "  "
-            f"filter_relevant={result.emotional_filter.is_emotionally_relevant} "
-            f"filter_confidence={result.emotional_filter.confidence} "
-            f"categories={result.emotional_filter.categories} "
-            f"risk_hint={result.emotional_filter.risk_hint} "
-            f"filter_provider={result.emotional_filter.provider}"
-        )
 
 
 if __name__ == "__main__":

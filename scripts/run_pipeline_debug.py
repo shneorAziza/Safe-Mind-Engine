@@ -15,12 +15,12 @@ def main() -> None:
     parser.add_argument(
         "--no-persist",
         action="store_true",
-        help="Create embeddings and logs, but do not save vectors to the local store.",
+        help="Run analysis and logs, but do not save signal features to the local store.",
     )
     parser.add_argument(
         "--no-vector",
         action="store_true",
-        help="Skip embedding creation entirely.",
+        help="Compatibility flag. Embeddings are disabled unless SAFE_MIND_ENABLE_EMBEDDINGS=true.",
     )
     args = parser.parse_args()
 

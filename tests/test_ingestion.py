@@ -29,54 +29,26 @@ def test_ingest_message_acknowledges_event() -> None:
             "redaction_count": 0,
             "risk_level": "low",
         },
-        "emotional_filter": {
-            "is_emotionally_relevant": True,
-            "confidence": 0.55,
-            "categories": ["distress"],
-            "risk_hint": "none",
-            "provider": "heuristic",
-        },
         "signal_features": {
             "should_store": True,
-            "signal_strength": 0.6,
+            "signal_strength": 0.7,
             "risk_level": "none",
-            "emotion_scores": {
-                "anxiety": 0.0,
-                "sadness": 0.6,
-                "anger": 0.0,
-                "loneliness": 0.0,
-                "shame": 0.0,
-                "hopelessness": 0.0,
+            "scores": {
+                "positive_emotion": 5,
+                "negative_emotion": 7,
+                "loneliness": 1,
+                "anxiety_stress": 7,
+                "hopelessness": 1,
+                "self_worth_low": 1,
+                "risk": 1,
             },
-            "cbt_pattern_scores": {
-                "catastrophizing": 0.0,
-                "all_or_nothing": 0.0,
-                "mind_reading": 0.0,
-                "overgeneralization": 0.0,
-                "self_blame": 0.0,
-                "avoidance": 0.0,
-            },
-            "theme_scores": {
-                "school": 0.0,
-                "friends": 0.0,
-                "parents": 0.0,
-                "ai_dependency": 0.0,
-                "academic_pressure": 0.0,
-                "social_rejection": 0.0,
-                "bullying": 0.0,
-            },
-            "protective_signal_scores": {
-                "seeking_help": 0.0,
-                "future_orientation": 0.0,
-                "trusted_adult": 0.0,
-                "problem_solving": 0.0,
-                "social_support": 0.0,
-            },
-            "confidence": 0.55,
+            "confidence": 0.6,
             "provider": "heuristic",
         },
         "stored_signal": {
             "stored": False,
+            "signal_id": None,
+            "daily_score_id": None,
             "vector_id": None,
             "embedding_model": None,
             "embedding_dimensions": None,
@@ -102,23 +74,33 @@ def test_ingest_message_returns_privacy_summary_without_redacted_text() -> None:
 
     assert response.status_code == 202
     body = response.json()
-    assert body["pipeline_stage"] == "emotional_filtered"
+    assert body["pipeline_stage"] == "psychologically_analyzed"
     assert body["privacy"] == {
         "pii_detected": True,
         "pii_types": ["PHONE"],
         "redaction_count": 1,
         "risk_level": "medium",
     }
-    assert body["emotional_filter"] == {
-        "is_emotionally_relevant": False,
-        "confidence": 0.0,
-        "categories": [],
-        "risk_hint": "none",
+    assert body["signal_features"] == {
+        "should_store": True,
+        "signal_strength": 0.1,
+        "risk_level": "none",
+        "scores": {
+            "positive_emotion": 5,
+            "negative_emotion": 1,
+            "loneliness": 1,
+            "anxiety_stress": 1,
+            "hopelessness": 1,
+            "self_worth_low": 1,
+            "risk": 1,
+        },
+        "confidence": 0.6,
         "provider": "heuristic",
     }
-    assert body["signal_features"] is None
     assert body["stored_signal"] == {
         "stored": False,
+        "signal_id": None,
+        "daily_score_id": None,
         "vector_id": None,
         "embedding_model": None,
         "embedding_dimensions": None,

@@ -2,7 +2,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -12,15 +12,13 @@ from safe_mind.api.eval_ui_react import EVAL_HTML as REACT_EVAL_HTML
 from safe_mind.core.config import settings
 from safe_mind.pipeline import process_message
 from safe_mind.schemas.ingestion import IngestMessageRequest
+from safe_mind.storage.factory import get_signal_store
 from safe_mind.storage.models import StoredSignal
-from safe_mind.storage.vector_store import SQLiteVectorStore
 
 router = APIRouter(tags=["eval-ui"])
 
 
 class EvalRuntimeInfo(BaseModel):
-    emotional_filter_provider: str
-    emotional_filter_model: str | None = None
     psychological_analyzer_provider: str
     psychological_analyzer_model: str | None = None
     embedding_provider: str | None = None
@@ -31,7 +29,7 @@ class EvalRuntimeInfo(BaseModel):
 class EvalRunRequest(BaseModel):
     messages: list[str] = Field(min_length=1)
     persist: bool = False
-    create_vector: bool = True
+    create_vector: bool = False
     source_app: str = "eval-ui"
     locale: str | None = "he"
     child_user_id: UUID | None = None
@@ -107,9 +105,15 @@ def run_eval(payload: EvalRunRequest) -> EvalRunResponse:
 
 @router.get("/eval/alerts/users", response_model=EvalAlertUsersResponse)
 def list_eval_alert_users() -> EvalAlertUsersResponse:
-    store = SQLiteVectorStore(settings.vector_db_path)
-    store.initialize()
-    return EvalAlertUsersResponse(users=store.list_child_user_ids())
+    store = get_signal_store()
+    try:
+        store.initialize()
+        return EvalAlertUsersResponse(users=store.list_child_user_ids())
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Signal store unavailable: {type(exc).__name__}: {exc}",
+        ) from exc
 
 
 @router.get("/eval/alerts/timeline", response_model=EvalAlertTimelineResponse)
@@ -118,11 +122,18 @@ def get_eval_alert_timeline(
     start_day: date | None = None,
     days: int = 30,
 ) -> EvalAlertTimelineResponse:
-    store = SQLiteVectorStore(settings.vector_db_path)
-    store.initialize()
-    records = store.list_signal_vectors_for_child(child_user_id)
+    store = get_signal_store()
+    try:
+        store.initialize()
+        records = store.list_signal_records_for_child(child_user_id)
+        previous_alert_days = store.list_parent_alert_days_for_child(child_user_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Signal store unavailable: {type(exc).__name__}: {exc}",
+        ) from exc
     if records:
-        latest_day = records[-1].occurred_at.date()
+        latest_day = records[-1].day
         resolved_days = max(days, 1)
         resolved_start_day = start_day or (latest_day - timedelta(days=resolved_days - 1))
     else:
@@ -134,7 +145,7 @@ def get_eval_alert_timeline(
         records=records,
         start_day=resolved_start_day,
         end_day=end_day,
-        previous_alert_days=store.list_parent_alert_days_for_child(child_user_id),
+        previous_alert_days=previous_alert_days,
     )
     return EvalAlertTimelineResponse(
         child_user_id=child_user_id,
@@ -154,16 +165,12 @@ def _status(stored_signal: StoredSignal) -> Literal["stored", "preview", "no_vec
 
 def _runtime_info() -> EvalRuntimeInfo:
     return EvalRuntimeInfo(
-        emotional_filter_provider=settings.emotional_filter_provider,
-        emotional_filter_model=settings.openai_emotional_filter_model
-        if settings.emotional_filter_provider == "openai"
-        else None,
         psychological_analyzer_provider=settings.psychological_analyzer_provider,
         psychological_analyzer_model=settings.openai_psychological_analyzer_model
         if settings.psychological_analyzer_provider == "openai"
         else None,
-        embedding_provider="openai" if settings.openai_api_key else None,
-        embedding_model=settings.openai_embedding_model if settings.openai_api_key else None,
+        embedding_provider="openai" if settings.enable_embeddings and settings.openai_api_key else None,
+        embedding_model=settings.openai_embedding_model if settings.enable_embeddings and settings.openai_api_key else None,
         strict_model_eval=True,
     )
 
@@ -632,7 +639,7 @@ EVAL_HTML = """
           </label>
           <label class="check">
             <input id="createVector" type="checkbox" checked>
-            Create real embedding/vector preview
+            Request embedding preview if explicitly enabled
           </label>
           <label class="check">
             <input id="persist" type="checkbox">
@@ -741,7 +748,7 @@ EVAL_HTML = """
       const monitoringDays = data.days.filter((day) => day.phase === "monitoring").length;
       const deviationDays = data.days.filter((day) => day.is_deviation).length;
       const pushDays = data.days.filter((day) => day.should_send_push).length;
-      const latestWithBaseline = [...data.days].reverse().find((day) => day.baseline_score !== null);
+      const latestWithBaseline = [...data.days].reverse().find((day) => day.baseline_scores);
       const firstPushDay = data.days.find((day) => day.should_send_push);
       const baselineRange = baselineRangeText(data.days);
       dashboardEl.innerHTML = `
@@ -756,9 +763,8 @@ EVAL_HTML = """
           ${metric("Push decisions", pushDays)}
         </div>
         <div class="metric-grid">
-          ${metric("Fixed baseline", formatNumber(latestWithBaseline?.baseline_score))}
-          ${metric("Latest score", formatNumber(lastValue(data.days, "daily_score")))}
-          ${metric("Latest delta", formatSigned(lastValue(data.days, "delta")))}
+          ${metric("Fixed baseline", formatScores(latestWithBaseline?.baseline_scores))}
+          ${metric("Latest metrics", formatScores(lastValue(data.days, "scores")))}
           ${metric("Latest 3/5 count", lastValue(data.days, "deviations_in_window") ?? "0")}
         </div>
         <div class="timeline-table-wrap">
@@ -768,9 +774,8 @@ EVAL_HTML = """
                 <th>Day</th>
                 <th>Phase</th>
                 <th>Msgs</th>
-                <th>Daily</th>
-                <th>Baseline</th>
-                <th>Delta</th>
+              <th>Daily metrics</th>
+              <th>Baseline metrics</th>
                 <th>Deviation</th>
                 <th>3/5</th>
                 <th>Push</th>
@@ -792,9 +797,8 @@ EVAL_HTML = """
           <td>${escapeHtml(day.day)}</td>
           <td>${phaseBadge(day.phase)}</td>
           <td>${day.message_count}</td>
-          <td>${formatNumber(day.daily_score)}</td>
-          <td>${formatNumber(day.baseline_score)}</td>
-          <td>${formatSigned(day.delta)}</td>
+          <td>${formatScores(day.scores)}</td>
+          <td>${formatScores(day.baseline_scores)}</td>
           <td>${day.is_deviation ? badge("yes", "warn") : badge("no", "ok")}</td>
           <td>${day.deviations_in_window}</td>
           <td>${day.should_send_push ? badge("send", "alert") : badge("hold", "ok")}</td>
@@ -827,6 +831,23 @@ EVAL_HTML = """
     function formatNumber(value) {
       if (value === null || value === undefined) return "n/a";
       return Number(value).toFixed(3);
+    }
+
+    function formatScores(scores) {
+      if (!scores) return "n/a";
+      const labels = {
+        positive_emotion: "pos",
+        negative_emotion: "neg",
+        loneliness: "lonely",
+        anxiety_stress: "stress",
+        hopelessness: "hope",
+        self_worth_low: "worth",
+        risk: "risk"
+      };
+      return Object.entries(labels)
+        .filter(([key]) => scores[key] !== undefined && scores[key] !== null)
+        .map(([key, label]) => `${label}: ${Number(scores[key]).toFixed(1)}`)
+        .join(" | ");
     }
 
     function formatSigned(value) {

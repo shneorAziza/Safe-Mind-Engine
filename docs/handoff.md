@@ -10,11 +10,11 @@ What exists today:
 - privacy redaction before model calls
 - OpenAI-backed emotional relevance filter
 - OpenAI-backed psychological analyzer
-- OpenAI embeddings
-- local SQLite vector store
+- compact JSON psychological scores
+- MongoDB Atlas signal-feature store with SQLite fallback
 - internal eval UI
 - internal alert dashboard
-- vector-based baseline and deviation engine
+- signal-score baseline and deviation engine
 
 What is still out of scope:
 
@@ -31,10 +31,9 @@ message
   -> privacy redaction
   -> emotional relevance filter
   -> psychological analyzer
-  -> temporary summary_for_embedding
-  -> embedding vector
-  -> local vector/features storage
-  -> vector-based baseline + deviation engine
+  -> compact JSON scores
+  -> local signal-feature storage
+  -> signal-score baseline + deviation engine
   -> internal parent alert decision
 ```
 
@@ -55,6 +54,11 @@ SAFE_MIND_OPENAI_EMOTIONAL_FILTER_MODEL=gpt-4o-mini
 SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 
+SAFE_MIND_ENABLE_EMBEDDINGS=false
+SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb
+SAFE_MIND_SIGNAL_DB_PATH=data/safe_mind_signals.sqlite3
+SAFE_MIND_MONGODB_URI=...
+SAFE_MIND_MONGODB_DATABASE=safe_mind
 SAFE_MIND_OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_API_KEY=...
 ```
@@ -65,13 +69,11 @@ Do not persist:
 
 - raw text
 - redacted text
-- `summary_for_embedding`
 - direct quotes
 - evidence phrases
 
 Allowed persistence:
 
-- embedding vectors
 - numeric/enumerated features
 - timestamps
 - pseudonymous ids
@@ -80,13 +82,11 @@ Allowed persistence:
 
 ## Alert Engine
 
-The current engine is vector-based.
+The current engine is signal-score based.
 
 - The first 10 calendar days after the first stored signal form a fixed baseline window.
-- Each day gets a `daily centroid` from the mean of that day's stored embedding vectors.
-- The baseline is a fixed `baseline centroid` built from the first 10 days.
-- `daily_score` is the cosine distance between the `daily centroid` and the `baseline centroid`.
-- `baseline_score` is the average baseline-day distance.
+- Each day gets a daily score from the compact psychological scores.
+- `baseline_score` is the average baseline-day score.
 - A day is a deviation when `daily_score - baseline_score >= 0.2`.
 - A push is recommended when there are 3 deviation days in the last 5 days.
 - Cooldown is 5 days.
@@ -120,7 +120,7 @@ Expected push days:
 - `2026-07-19`
 - `2026-07-25`
 
-These push days were preserved after the migration from `signal_strength`-based alerting to vector-based alerting.
+These push days should be rechecked after threshold tuning against the compact score baseline.
 
 ## Useful Commands
 
@@ -129,4 +129,5 @@ These push days were preserved after the migration from `signal_strength`-based 
 .\.venv\Scripts\python.exe -m ruff check .
 .\.venv\Scripts\python.exe scripts\seed_message_pipeline_demo_data.py
 .\.venv\Scripts\python.exe scripts\rebuild_parent_alert_decisions.py
+.\.venv\Scripts\python.exe scripts\check_mongodb_connection.py
 ```

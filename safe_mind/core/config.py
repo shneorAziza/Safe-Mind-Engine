@@ -28,7 +28,15 @@ class Settings(BaseSettings):
         default="text-embedding-3-small",
         alias="SAFE_MIND_OPENAI_EMBEDDING_MODEL",
     )
+    enable_embeddings: bool = Field(default=False, alias="SAFE_MIND_ENABLE_EMBEDDINGS")
+    signal_store_provider: Literal["sqlite", "mongodb"] = Field(
+        default="sqlite",
+        alias="SAFE_MIND_SIGNAL_STORE_PROVIDER",
+    )
+    signal_db_path: str = Field(default="data/safe_mind_signals.sqlite3", alias="SAFE_MIND_SIGNAL_DB_PATH")
     vector_db_path: str = Field(default="data/safe_mind_vectors.sqlite3", alias="SAFE_MIND_VECTOR_DB_PATH")
+    mongodb_uri: str | None = Field(default=None, alias="SAFE_MIND_MONGODB_URI")
+    mongodb_database: str = Field(default="safe_mind", alias="SAFE_MIND_MONGODB_DATABASE")
     pipeline_version: str = Field(default="v1", alias="SAFE_MIND_PIPELINE_VERSION")
     persist_signals: bool = Field(default=True, alias="SAFE_MIND_PERSIST_SIGNALS")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")

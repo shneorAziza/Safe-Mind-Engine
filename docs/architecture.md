@@ -18,7 +18,7 @@ In scope today:
 - privacy redaction before model calls
 - emotional relevance filtering
 - psychological signal extraction
-- embeddings and vector storage
+- compact signal-feature storage
 - daily alert-decision logic
 - internal evaluation and dashboard tooling
 
@@ -29,8 +29,7 @@ POST /v1/ingest/messages
   -> privacy redaction
   -> emotional relevance filter
   -> psychological analyzer
-  -> embeddings
-  -> SQLite vector/features storage
+  -> SQLite signal-feature storage
   -> daily alert decision
 ```
 
@@ -40,7 +39,7 @@ POST /v1/ingest/messages
 Child device
   -> Backend ingestion
   -> Privacy-first AI pipeline
-  -> Stored numeric/vector features only
+  -> Stored numeric features only
   -> Fixed baseline + deviation detection
   -> Parent notification service
 ```
@@ -79,12 +78,11 @@ safe_mind/
 
 ## Storage Model
 
-SQLite is used today for pilot simplicity.
+MongoDB Atlas is used for the real pilot signal store. SQLite remains available
+as a local fallback for tests and offline development.
 
 Stored data includes:
 
-- embedding vectors
-- embedding model metadata
 - numeric/enumerated signal features
 - timestamps
 - pseudonymous ids
@@ -99,14 +97,13 @@ Stored data must not include:
 
 ## Alert Engine Design
 
-The internal alert engine now works primarily over stored embedding vectors.
+The internal alert engine now works over compact stored psychological scores.
 
 Current policy:
 
-- first 10 calendar days form a fixed vector baseline
-- each day gets a daily vector centroid from that day's stored embeddings
-- daily score is the cosine distance between the daily centroid and the fixed baseline centroid
-- baseline score is the average baseline-day distance from the baseline centroid
+- first 10 calendar days form a fixed personal baseline
+- each day gets a daily score from that day's compact psychological scores
+- baseline score is the average score during the baseline window
 - a deviation requires `daily_score - baseline_score >= 0.2`
 - a push decision requires `3 deviations in 5 days`
 - cooldown suppresses immediate repeat pushes

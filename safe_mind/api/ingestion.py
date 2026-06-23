@@ -14,9 +14,8 @@ def ingest_message(payload: IngestMessageRequest) -> IngestMessageResponse:
     return IngestMessageResponse(
         event_id=payload.event_id,
         status="accepted",
-        pipeline_stage="psychologically_analyzed" if result.signal_features else "emotional_filtered",
+        pipeline_stage="psychologically_analyzed",
         privacy=result.privacy,
-        emotional_filter=result.emotional_filter,
         signal_features=result.signal_features,
         stored_signal=result.stored_signal,
         alert_decision=result.alert_decision,

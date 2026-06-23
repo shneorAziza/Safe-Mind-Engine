@@ -4,11 +4,13 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from safe_mind.alerts.engine import rebuild_daily_alert_state, score_dict_from_model
 from pydantic import BaseModel
 
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.embeddings.models import EmbeddingResult
+from safe_mind.storage.models import DailySignalRecord, UserBaseline
 
 
 class SignalVectorRecord(BaseModel):
@@ -19,6 +21,17 @@ class SignalVectorRecord(BaseModel):
     occurred_at: datetime
     source_app: str | None
     embedding_vector: list[float]
+    features: SignalFeatures
+    pipeline_version: str
+
+
+class SignalRecord(BaseModel):
+    id: str
+    event_id: UUID
+    child_user_id: UUID
+    device_id: UUID
+    occurred_at: datetime
+    source_app: str | None
     features: SignalFeatures
     pipeline_version: str
 
@@ -54,14 +67,72 @@ class SQLiteVectorStore:
             )
             connection.execute(
                 """
+                create table if not exists daily_signal_scores (
+                    id text primary key,
+                    child_user_id text not null,
+                    day text not null,
+                    message_count integer not null,
+                    scores_json text not null,
+                    baseline_day_count integer not null,
+                    is_baseline_day integer not null,
+                    is_flagged integer not null,
+                    should_send_alert integer not null,
+                    deviations_in_window integer not null,
+                    alert_reason text not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    unique(child_user_id, day)
+                )
+                """
+            )
+            connection.execute(
+                "create index if not exists idx_daily_signal_scores_user_day "
+                "on daily_signal_scores(child_user_id, day)"
+            )
+            connection.execute(
+                """
+                create table if not exists user_baselines (
+                    id text primary key,
+                    child_user_id text not null,
+                    baseline_start_day text not null,
+                    baseline_end_day text not null,
+                    baseline_day_count integer not null,
+                    scores_json text not null,
+                    is_final integer not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    unique(child_user_id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                create table if not exists signal_feature_records (
+                    id text primary key,
+                    event_id text not null,
+                    child_user_id text not null,
+                    device_id text not null,
+                    occurred_at text not null,
+                    source_app text,
+                    features_json text not null,
+                    pipeline_version text not null,
+                    created_at text not null,
+                    unique(event_id)
+                )
+                """
+            )
+            connection.execute(
+                "create index if not exists idx_signal_feature_records_user_time "
+                "on signal_feature_records(child_user_id, occurred_at)"
+            )
+            connection.execute(
+                """
                 create table if not exists parent_alert_decisions (
                     id text primary key,
                     child_user_id text not null,
                     target_day text not null,
                     should_send_push integer not null,
                     reason text not null,
-                    daily_score real,
-                    baseline_score real,
                     deviations_in_window integer not null,
                     gate_window_days integer not null,
                     required_deviation_days integer not null,
@@ -125,6 +196,124 @@ class SQLiteVectorStore:
             )
         return vector_id
 
+    def save_signal_features(
+        self,
+        *,
+        event_id: UUID,
+        child_user_id: UUID,
+        device_id: UUID,
+        occurred_at: datetime,
+        source_app: str | None,
+        features: SignalFeatures,
+        pipeline_version: str,
+    ) -> str:
+        del event_id, device_id, source_app, pipeline_version
+        day = occurred_at.date()
+        scores = score_dict_from_model(features.scores)
+        now = datetime.now(UTC)
+        daily_id = str(uuid4())
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select id, message_count, scores_json, created_at
+                from daily_signal_scores
+                where child_user_id = ? and day = ?
+                """,
+                (str(child_user_id), day.isoformat()),
+            ).fetchone()
+            if row:
+                daily_id = row[0]
+                previous_count = int(row[1])
+                message_count = previous_count + 1
+                previous_scores = json.loads(row[2])
+                created_at = row[3]
+            else:
+                previous_count = 0
+                message_count = 1
+                previous_scores = {key: 0.0 for key in scores}
+                created_at = now.isoformat()
+
+            averaged = {
+                key: ((float(previous_scores.get(key, 0.0)) * previous_count) + value) / message_count
+                for key, value in scores.items()
+            }
+            connection.execute(
+                """
+                insert into daily_signal_scores (
+                    id, child_user_id, day, message_count, scores_json,
+                    baseline_day_count, is_baseline_day,
+                    is_flagged, should_send_alert, deviations_in_window,
+                    alert_reason, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(child_user_id, day) do update set
+                    message_count = excluded.message_count,
+                    scores_json = excluded.scores_json,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    daily_id,
+                    str(child_user_id),
+                    day.isoformat(),
+                    message_count,
+                    json.dumps(averaged),
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    "insufficient_baseline",
+                    created_at,
+                    now.isoformat(),
+                ),
+            )
+        self._rebuild_daily_state(child_user_id)
+        return daily_id
+
+    def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                select
+                    id,
+                    child_user_id,
+                    day,
+                    message_count,
+                    scores_json,
+                    baseline_day_count,
+                    is_baseline_day,
+                    is_flagged,
+                    should_send_alert,
+                    deviations_in_window,
+                    alert_reason,
+                    created_at,
+                    updated_at
+                from daily_signal_scores
+                where child_user_id = ?
+                order by day asc
+                """,
+                (str(child_user_id),),
+            ).fetchall()
+
+        return [
+            DailySignalRecord(
+                id=row[0],
+                child_user_id=UUID(row[1]),
+                day=datetime.fromisoformat(row[2]).date(),
+                message_count=int(row[3]),
+                scores=json.loads(row[4]),
+                baseline_day_count=int(row[5]),
+                is_baseline_day=bool(row[6]),
+                is_flagged=bool(row[7]),
+                should_send_alert=bool(row[8]),
+                deviations_in_window=int(row[9]),
+                alert_reason=row[10],
+                created_at=datetime.fromisoformat(row[11]),
+                updated_at=datetime.fromisoformat(row[12]),
+            )
+            for row in rows
+        ]
+
     def list_signal_vectors_for_child(self, child_user_id: UUID) -> list[SignalVectorRecord]:
         with self._connect() as connection:
             rows = connection.execute(
@@ -165,8 +354,8 @@ class SQLiteVectorStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                select child_user_id, max(occurred_at) as last_seen
-                from signal_vectors
+                select child_user_id, max(day) as last_seen
+                from daily_signal_scores
                 group by child_user_id
                 order by last_seen desc
                 """
@@ -178,10 +367,10 @@ class SQLiteVectorStore:
         with self._connect() as connection:
             rows = connection.execute(
                 """
-                select target_day
-                from parent_alert_decisions
-                where child_user_id = ? and should_send_push = 1
-                order by target_day asc
+                select day
+                from daily_signal_scores
+                where child_user_id = ? and should_send_alert = 1
+                order by day asc
                 """,
                 (str(child_user_id),),
             ).fetchall()
@@ -199,20 +388,16 @@ class SQLiteVectorStore:
                     target_day,
                     should_send_push,
                     reason,
-                    daily_score,
-                    baseline_score,
                     deviations_in_window,
                     gate_window_days,
                     required_deviation_days,
                     message_count,
                     created_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(child_user_id, target_day) do update set
                     should_send_push = excluded.should_send_push,
                     reason = excluded.reason,
-                    daily_score = excluded.daily_score,
-                    baseline_score = excluded.baseline_score,
                     deviations_in_window = excluded.deviations_in_window,
                     gate_window_days = excluded.gate_window_days,
                     required_deviation_days = excluded.required_deviation_days,
@@ -224,8 +409,6 @@ class SQLiteVectorStore:
                     decision.target_day.isoformat(),
                     int(decision.should_send_push),
                     decision.reason,
-                    decision.daily_score,
-                    decision.baseline_score,
                     decision.deviations_in_window,
                     decision.gate_window_days,
                     decision.required_deviation_days,
@@ -241,12 +424,90 @@ class SQLiteVectorStore:
                 "delete from parent_alert_decisions where child_user_id = ?",
                 (str(child_user_id),),
             )
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "update daily_signal_scores set should_send_alert = 0 where child_user_id = ?",
+                (str(child_user_id),),
+            )
         return int(cursor.rowcount or 0)
 
     def count(self) -> int:
+        with self._connect() as connection:
+            row = connection.execute("select count(*) from daily_signal_scores").fetchone()
+        return int(row[0])
+
+    def count_vectors(self) -> int:
         with self._connect() as connection:
             row = connection.execute("select count(*) from signal_vectors").fetchone()
         return int(row[0])
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
+
+    def _rebuild_daily_state(self, child_user_id: UUID) -> None:
+        records, baseline_scores, _baseline_score = rebuild_daily_alert_state(
+            self.list_signal_records_for_child(child_user_id)
+        )
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            if baseline_scores is not None:
+                baseline_records = records[:10]
+                baseline_id = str(uuid4())
+                existing = connection.execute(
+                    "select id, created_at from user_baselines where child_user_id = ?",
+                    (str(child_user_id),),
+                ).fetchone()
+                if existing:
+                    baseline_id = existing[0]
+                    created_at = existing[1]
+                else:
+                    created_at = now
+                connection.execute(
+                    """
+                    insert into user_baselines (
+                        id, child_user_id, baseline_start_day, baseline_end_day,
+                        baseline_day_count, scores_json, is_final,
+                        created_at, updated_at
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    on conflict(child_user_id) do update set
+                        baseline_start_day = excluded.baseline_start_day,
+                        baseline_end_day = excluded.baseline_end_day,
+                        baseline_day_count = excluded.baseline_day_count,
+                        scores_json = excluded.scores_json,
+                        is_final = excluded.is_final,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        baseline_id,
+                        str(child_user_id),
+                        baseline_records[0].day.isoformat(),
+                        baseline_records[-1].day.isoformat(),
+                        len(baseline_records),
+                        json.dumps(baseline_scores),
+                        1,
+                        created_at,
+                        now,
+                    ),
+                )
+            for record in records:
+                connection.execute(
+                    """
+                    update daily_signal_scores
+                    set baseline_day_count = ?, is_baseline_day = ?,
+                        is_flagged = ?, should_send_alert = ?, deviations_in_window = ?,
+                        alert_reason = ?,
+                        updated_at = ?
+                    where id = ?
+                    """,
+                    (
+                        record.baseline_day_count,
+                        int(record.is_baseline_day),
+                        int(record.is_flagged),
+                        int(record.should_send_alert),
+                        record.deviations_in_window,
+                        record.alert_reason,
+                        now,
+                        record.id,
+                    ),
+                )

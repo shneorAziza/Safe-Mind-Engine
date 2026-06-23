@@ -2,7 +2,11 @@
 
 ## Status
 
-Implemented for the pilot backend.
+Implemented but disabled for the current pilot path.
+
+The active ingestion flow now stores compact JSON psychological scores and does
+not call the OpenAI embeddings API unless `SAFE_MIND_ENABLE_EMBEDDINGS=true` is
+set explicitly.
 
 The current implementation uses:
 

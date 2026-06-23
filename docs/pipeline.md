@@ -2,16 +2,14 @@
 
 ## Purpose
 
-The backend now supports the full internal alert-evaluation loop, not only a first-stage emotional filter.
+The backend now supports the full internal alert-evaluation loop without a first-stage message filter.
 
 ```text
 message
   -> privacy redaction
-  -> emotional relevance filter
   -> psychological signal analysis
-  -> temporary embedding summary
-  -> embedding vector
-  -> vector/features storage
+  -> compact JSON signal scores
+  -> signal-feature storage
   -> daily trend + alert decision
 ```
 
@@ -57,32 +55,7 @@ Outputs include:
 
 `redacted_text` is used internally by later stages but is not stored in the database.
 
-## Stage 2: Emotional Relevance Filter
-
-Files:
-
-- [safe_mind/signals/service.py](../safe_mind/signals/service.py)
-- [safe_mind/signals/openai_emotional_filter.py](../safe_mind/signals/openai_emotional_filter.py)
-- [safe_mind/signals/emotional_filter.py](../safe_mind/signals/emotional_filter.py)
-
-By default this stage uses the configured provider from `.env`.
-When OpenAI is enabled, the result is still protected by local urgent-safety overrides.
-
-Example output:
-
-```json
-{
-  "is_emotionally_relevant": true,
-  "confidence": 0.85,
-  "categories": ["anxiety"],
-  "risk_hint": "none",
-  "provider": "openai"
-}
-```
-
-If `is_emotionally_relevant=false`, the pipeline stops here.
-
-## Stage 3: Psychological Signal Analyzer
+## Stage 2: Psychological Signal Analyzer
 
 Files:
 
@@ -90,31 +63,31 @@ Files:
 - [safe_mind/analysis/openai_analyzer.py](../safe_mind/analysis/openai_analyzer.py)
 - [safe_mind/analysis/heuristic_analyzer.py](../safe_mind/analysis/heuristic_analyzer.py)
 
-This stage converts an emotionally relevant message into numeric and enumerated features.
+This stage converts every privacy-redacted message into numeric and enumerated features.
 
 Important outputs:
 
 - `signal_strength`
 - `risk_level`
-- `emotion_scores`
-- `theme_scores`
-- `protective_signal_scores`
-- `summary_for_embedding`
+- `scores.positive_emotion`
+- `scores.negative_emotion`
+- `scores.loneliness`
+- `scores.anxiety_stress`
+- `scores.hopelessness`
+- `scores.self_worth_low`
+- `scores.risk`
 
-`summary_for_embedding` is temporary and must not be stored as text.
-`signal_strength` is still stored as metadata, but it is no longer the primary input to the alert engine.
+No summary, evidence phrase, quote, raw text, or redacted text is stored.
+`signal_strength` is stored as metadata, while the alert engine uses the compact scores.
 
-## Stage 4: Embedding and Storage
+## Stage 3: Signal Storage
 
 Files:
 
-- [safe_mind/embeddings/openai_embeddings.py](../safe_mind/embeddings/openai_embeddings.py)
 - [safe_mind/storage/vector_store.py](../safe_mind/storage/vector_store.py)
 
-If `features.should_store=true`, the pipeline creates an embedding and stores:
+If `features.should_store=true`, the current pilot pipeline stores:
 
-- vector
-- embedding metadata
 - numeric and enumerated features
 - timestamps
 - pseudonymous ids
@@ -126,7 +99,7 @@ The following are not stored:
 - summary text
 - quotes
 
-## Stage 5: Trend and Alert Decision
+## Stage 4: Trend and Alert Decision
 
 Files:
 
@@ -135,11 +108,11 @@ Files:
 
 After storage, the engine evaluates the child's alert state:
 
-- fixed baseline centroid from the first 10 calendar days
-- daily score from cosine distance between the day's vector centroid and the fixed baseline centroid
-- baseline score from the average baseline-day distances
+- fixed baseline from the first 10 calendar days
+- daily score from that day's compact psychological scores
+- baseline score from the average baseline-day scores
 - deviation threshold of `+0.2` over baseline score
-- alert gate of `3 deviations in 5 days`
+- alert gate of `3 consecutive deviation days`
 - cooldown after a `send` decision
 
 The output is an internal `ParentAlertDecision`.
@@ -149,8 +122,7 @@ The output is an internal `ParentAlertDecision`.
 The ingestion response includes:
 
 - privacy summary
-- emotional filter result
-- signal features when analysis ran
+- signal features
 - storage summary
 - `alert_decision` when a stored signal triggered trend evaluation
 

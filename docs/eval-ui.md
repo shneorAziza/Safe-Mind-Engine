@@ -29,21 +29,19 @@ The pipeline section lets us paste one or many messages and inspect the staged f
 ```text
 Raw Input
   -> Privacy
-  -> Emotional Filter
   -> Psychological Analyzer
   -> Embedding + Vector/Metadata preview or storage
 ```
 
 Each message is processed independently.
 The display is grouped by stage, so every stage shows the messages that reached it.
-Messages that are filtered out simply do not appear in later stages.
 
 The alert dashboard section lets us:
 
 - select a child user from the local DB
 - inspect a 30-day window
 - view fixed baseline days
-- see daily vector distance, baseline distance, delta, deviation status, 3-of-5 count, push decision, and reason
+- see daily signal score, baseline score, delta, deviation status, consecutive deviation count, push decision, and reason
 
 ## Defaults
 
@@ -87,7 +85,7 @@ GET /eval/alerts/timeline
 `create_vector=false` means:
 
 - skip embedding entirely
-- useful for faster privacy/filter/analyzer checks
+- useful for faster privacy/analyzer checks
 
 `GET /eval/alerts/timeline` returns the daily alert timeline for one child user.
 If `start_day` is omitted, the backend returns the last `days` window based on the latest stored signal for that user.

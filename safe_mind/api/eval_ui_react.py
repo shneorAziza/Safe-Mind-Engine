@@ -410,16 +410,14 @@ EVAL_HTML = """
     const stages = [
       "input",
       "privacy_redaction",
-      "emotional_filter",
       "psychological_analyzer",
-      "embedding_and_storage"
+      "signal_storage"
     ];
     const stageLabels = {
       input: "Raw Messages",
       privacy_redaction: "1. Privacy",
-      emotional_filter: "2. Emotional Filter",
-      psychological_analyzer: "3. Psychological Analyzer",
-      embedding_and_storage: "4. Embedding + Vector"
+      psychological_analyzer: "2. Psychological Analyzer",
+      signal_storage: "3. Signal JSON + Baseline"
     };
 
     function App() {
@@ -429,7 +427,7 @@ EVAL_HTML = """
       const [timelineDays, setTimelineDays] = useState(30);
       const [messages, setMessages] = useState(sampleMessages);
       const [oneMessagePerDay, setOneMessagePerDay] = useState(false);
-      const [createVector, setCreateVector] = useState(true);
+      const [createVector, setCreateVector] = useState(false);
       const [persist, setPersist] = useState(false);
       const [activeView, setActiveView] = useState("dashboard");
       const [runData, setRunData] = useState(null);
@@ -651,7 +649,7 @@ EVAL_HTML = """
           h(Switch, {
             checked: props.createVector,
             onChange: props.setCreateVector,
-            label: "Create real embedding/vector preview"
+            label: "Request embedding preview if explicitly enabled"
           }),
           h(Switch, {
             checked: props.persist,
@@ -676,7 +674,7 @@ EVAL_HTML = """
       const monitoringDays = data.days.filter((day) => day.phase === "monitoring").length;
       const deviationDays = data.days.filter((day) => day.is_deviation).length;
       const pushDays = data.days.filter((day) => day.should_send_push).length;
-      const latestWithBaseline = [...data.days].reverse().find((day) => day.baseline_score !== null);
+      const latestWithBaseline = [...data.days].reverse().find((day) => day.baseline_scores);
       const firstPushDay = data.days.find((day) => day.should_send_push);
 
       return h(React.Fragment, null,
@@ -687,7 +685,7 @@ EVAL_HTML = """
         h("div", { className: "panel-block" },
           h("div", { className: "hint" },
             h("strong", null, "What you are seeing"),
-            `Baseline period: ${baselineRangeText(data.days)}. First push in this view: ${firstPushDay ? firstPushDay.day : "none"}. A push means the 3-of-5 deviation gate was met.`
+            `Baseline period: ${baselineRangeText(data.days)}. First push in this view: ${firstPushDay ? firstPushDay.day : "none"}. A push means the 3 consecutive deviation-day gate was met.`
           ),
           h("div", { className: "metric-grid" },
             h(Metric, { label: "Baseline days", value: baselineDays }),
@@ -696,10 +694,9 @@ EVAL_HTML = """
             h(Metric, { label: "Push decisions", value: pushDays })
           ),
           h("div", { className: "metric-grid" },
-            h(Metric, { label: "Fixed baseline", value: formatNumber(latestWithBaseline?.baseline_score) }),
-            h(Metric, { label: "Latest score", value: formatNumber(lastValue(data.days, "daily_score")) }),
-            h(Metric, { label: "Latest delta", value: formatSigned(lastValue(data.days, "delta")) }),
-            h(Metric, { label: "Latest 3/5 count", value: lastValue(data.days, "deviations_in_window") ?? "0" })
+            h(Metric, { label: "Fixed baseline", value: formatScores(latestWithBaseline?.baseline_scores) }),
+            h(Metric, { label: "Latest metrics", value: formatScores(lastValue(data.days, "scores")) }),
+            h(Metric, { label: "Latest streak count", value: lastValue(data.days, "deviations_in_window") ?? "0" })
           )
         ),
         h(TimelineTable, { days: data.days })
@@ -711,7 +708,7 @@ EVAL_HTML = """
         h("table", null,
           h("thead", null,
             h("tr", null,
-              ["Day", "Phase", "Msgs", "Daily", "Baseline", "Delta", "Deviation", "3/5", "Push", "Reason"]
+              ["Day", "Phase", "Msgs", "Daily metrics", "Baseline metrics", "Deviation", "Streak", "Push", "Reason"]
                 .map((head) => h("th", { key: head }, head))
             )
           ),
@@ -732,9 +729,8 @@ EVAL_HTML = """
         h("td", null, day.day),
         h("td", null, h(PhaseBadge, { phase: day.phase })),
         h("td", null, day.message_count),
-        h("td", null, formatNumber(day.daily_score)),
-        h("td", null, formatNumber(day.baseline_score)),
-        h("td", null, formatSigned(day.delta)),
+        h("td", null, formatScores(day.scores)),
+        h("td", null, formatScores(day.baseline_scores)),
         h("td", null, day.is_deviation ? h(Badge, { tone: "warn" }, "yes") : h(Badge, { tone: "ok" }, "no")),
         h("td", null, day.deviations_in_window),
         h("td", null, day.should_send_push ? h(Badge, { tone: "alert" }, "send") : h(Badge, { tone: "ok" }, "hold")),
@@ -756,9 +752,8 @@ EVAL_HTML = """
           h(Pill, { label: `stored: ${stored}` }),
           h(Pill, { label: `preview: ${preview}` }),
           h(Pill, { label: `no vector: ${noVector}` }),
-          h(Pill, { label: `filter model: ${runtime.emotional_filter_model || runtime.emotional_filter_provider || "n/a"}` }),
           h(Pill, { label: `analyzer model: ${runtime.psychological_analyzer_model || runtime.psychological_analyzer_provider || "n/a"}` }),
-          h(Pill, { label: `embedding model: ${runtime.embedding_model || runtime.embedding_provider || "n/a"}` })
+          h(Pill, { label: `embedding model: ${runtime.embedding_model || runtime.embedding_provider || "disabled"}` })
         ),
         h("div", { className: "flow" }, stages.map((stage) => h(Stage, { key: stage, stage, results: data.results })))
       );
@@ -795,28 +790,27 @@ EVAL_HTML = """
           h(JsonBlock, { title: "Privacy result", value: log.output.privacy })
         );
       }
-      if (stage === "emotional_filter") {
-        if (log.output.error) return h(ModelErrorCard, { title, status: "model error", output: log.output });
-        return h(MessageCard, { title, status: log.output.is_emotionally_relevant ? "passed" : "stopped" },
-          h(JsonBlock, { title: "Decision", value: {
-            passed: log.output.is_emotionally_relevant,
-            confidence: log.output.confidence,
-            categories: log.output.categories,
-            risk_hint: log.output.risk_hint,
-            provider: log.output.provider,
-            configured_model: log.output.configured_model
-          }})
-        );
-      }
       if (stage === "psychological_analyzer") {
         if (log.output.error) return h(ModelErrorCard, { title, status: "model error", output: log.output });
         return h(MessageCard, { title, status: "analyzed" },
           h(JsonBlock, { title: "Signal features", value: log.output.signal_features }),
-          h(JsonBlock, { title: "Temporary summary for embedding", value: log.output.summary_for_embedding }),
           h(JsonBlock, { title: "Configured runtime", value: {
             provider: log.output.configured_provider,
             model: log.output.configured_model
           }})
+        );
+      }
+      if (stage === "signal_storage") {
+        const signalRecord = log.output.signal_record || {};
+        return h(MessageCard, { title, status: log.output.stored ? "stored" : "preview" },
+          h(JsonBlock, { title: "Stored analysis", value: log.output.signal_features }),
+          h(JsonBlock, { title: "Storage", value: {
+            stored: log.output.stored,
+            stored_text: log.output.stored_text,
+            signal_id: log.output.signal_id || signalRecord.signal_id,
+            storage_kind: log.output.storage_kind
+          }}),
+          h(JsonBlock, { title: "Alert decision", value: log.output.alert_decision })
         );
       }
       if (stage === "embedding_and_storage") {
@@ -917,6 +911,23 @@ EVAL_HTML = """
     function formatNumber(value) {
       if (value === null || value === undefined) return "n/a";
       return Number(value).toFixed(3);
+    }
+
+    function formatScores(scores) {
+      if (!scores) return "n/a";
+      const labels = {
+        positive_emotion: "pos",
+        negative_emotion: "neg",
+        loneliness: "lonely",
+        anxiety_stress: "stress",
+        hopelessness: "hope",
+        self_worth_low: "worth",
+        risk: "risk"
+      };
+      return Object.entries(labels)
+        .filter(([key]) => scores[key] !== undefined && scores[key] !== null)
+        .map(([key, label]) => `${label}: ${Number(scores[key]).toFixed(1)}`)
+        .join(" | ");
     }
 
     function formatSigned(value) {

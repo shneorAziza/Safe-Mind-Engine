@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.privacy.models import PrivacySummary
-from safe_mind.signals.emotional_filter import EmotionalFilterResult
 from safe_mind.storage.models import StoredSignal
 
 
@@ -25,9 +24,8 @@ class IngestMessageRequest(BaseModel):
 class IngestMessageResponse(BaseModel):
     event_id: UUID
     status: Literal["accepted"]
-    pipeline_stage: Literal["emotional_filtered", "psychologically_analyzed"]
+    pipeline_stage: Literal["psychologically_analyzed"]
     privacy: PrivacySummary
-    emotional_filter: EmotionalFilterResult
     signal_features: SignalFeatures | None = None
     stored_signal: StoredSignal
     alert_decision: ParentAlertDecision | None = None

@@ -7,7 +7,6 @@ from pydantic import ValidationError
 from safe_mind.analysis.heuristic_analyzer import analyze_with_heuristics
 from safe_mind.analysis.models import PsychologicalAnalysisResult
 from safe_mind.openai_curl_client import CurlOpenAIError, post_json
-from safe_mind.signals.emotional_filter import EmotionalFilterResult
 
 
 class ChatCompletionClient(Protocol):
@@ -15,7 +14,7 @@ class ChatCompletionClient(Protocol):
 
 
 SYSTEM_PROMPT = """You are SafeMind's psychological signal analyzer for Hebrew and English teen AI conversations.
-You receive only privacy-redacted text that already passed an emotional relevance filter.
+You receive only privacy-redacted text. Every message must be analyzed directly; there is no prior emotional relevance filter.
 
 Your job:
 - Extract internal numeric signals for trend analysis.
@@ -30,46 +29,24 @@ Return JSON only with this shape:
     "should_store": boolean,
     "signal_strength": number 0..1,
     "risk_level": "none" | "low" | "medium" | "high" | "urgent",
-    "emotion_scores": {
-      "anxiety": number 0..1,
-      "sadness": number 0..1,
-      "anger": number 0..1,
-      "loneliness": number 0..1,
-      "shame": number 0..1,
-      "hopelessness": number 0..1
-    },
-    "cbt_pattern_scores": {
-      "catastrophizing": number 0..1,
-      "all_or_nothing": number 0..1,
-      "mind_reading": number 0..1,
-      "overgeneralization": number 0..1,
-      "self_blame": number 0..1,
-      "avoidance": number 0..1
-    },
-    "theme_scores": {
-      "school": number 0..1,
-      "friends": number 0..1,
-      "parents": number 0..1,
-      "ai_dependency": number 0..1,
-      "academic_pressure": number 0..1,
-      "social_rejection": number 0..1,
-      "bullying": number 0..1
-    },
-    "protective_signal_scores": {
-      "seeking_help": number 0..1,
-      "future_orientation": number 0..1,
-      "trusted_adult": number 0..1,
-      "problem_solving": number 0..1,
-      "social_support": number 0..1
+      "scores": {
+      "positive_emotion": integer 1..10,
+      "negative_emotion": integer 1..10,
+      "loneliness": integer 1..10,
+      "anxiety_stress": integer 1..10,
+      "hopelessness": integer 1..10,
+      "self_worth_low": integer 1..10,
+      "risk": integer 1..10
     },
     "confidence": number 0..1,
     "provider": "openai"
-  },
-  "summary_for_embedding": "A short sanitized semantic summary for vectorization only."
+  }
 }
 
-The summary_for_embedding is temporary and will not be stored as text. Make it generic, concise, and free of identifying details.
-If the message is too weak for storage, set should_store=false and keep all scores low.
+Do not return summaries, evidence phrases, quotes, or any other text extracted from the message.
+Always set should_store=true so the pilot can compute daily averages for every incoming message.
+For neutral or practical messages, keep emotional/risk scores low and use confidence to express uncertainty.
+Use 1 for very low, 5 for moderate, and 10 for very high.
 """
 
 
@@ -82,7 +59,6 @@ class OpenAIPsychologicalAnalyzer:
     def analyze(
         self,
         text: str,
-        emotional_filter: EmotionalFilterResult,
         *,
         allow_fallback: bool = True,
     ) -> PsychologicalAnalysisResult:
@@ -98,7 +74,6 @@ class OpenAIPsychologicalAnalyzer:
                         "content": json.dumps(
                             {
                                 "redacted_text": text,
-                                "filter_result": emotional_filter.model_dump(),
                             },
                             ensure_ascii=False,
                         ),
@@ -121,7 +96,6 @@ class OpenAIPsychologicalAnalyzer:
                             "content": json.dumps(
                                 {
                                     "redacted_text": text,
-                                    "filter_result": emotional_filter.model_dump(),
                                 },
                                 ensure_ascii=False,
                             ),
@@ -141,4 +115,4 @@ class OpenAIPsychologicalAnalyzer:
         except (OpenAIError, ValidationError, ValueError, json.JSONDecodeError, CurlOpenAIError):
             if not allow_fallback:
                 raise
-            return analyze_with_heuristics(text, emotional_filter)
+            return analyze_with_heuristics(text)

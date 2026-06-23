@@ -4,15 +4,14 @@
 
 Implemented.
 
-This is the stage after the emotional relevance filter.
+This is the stage after privacy redaction.
 
 Current backend flow:
 
 ```text
 POST /v1/ingest/messages
   -> privacy redaction
-  -> emotional relevance filter
-  -> psychological signal analyzer, only if the message passed the filter
+  -> psychological signal analyzer
   -> API response with numeric signal features
 ```
 
@@ -20,9 +19,8 @@ POST /v1/ingest/messages
 
 The analyzer does not diagnose, treat, or produce a clinical opinion.
 
-Its job is to convert a filtered emotional message into structured internal signals that can later be:
+Its job is to convert every privacy-redacted message into structured internal signals that can later be:
 
-- embedded into a vector,
 - stored as numeric features,
 - aggregated by day,
 - compared to a personal baseline,
@@ -52,12 +50,13 @@ The analyzer returns an internal `PsychologicalAnalysisResult`:
 ```text
 PsychologicalAnalysisResult
   -> features
-  -> summary_for_embedding
+  -> compact scores
 ```
 
 `features` contains numeric and enum fields.
 
-`summary_for_embedding` is temporary text used only for creating an embedding later.
+The current pilot output does not include an embedding summary.
+For the pilot, every analyzed message sets `should_store=true` so daily averages can include neutral and practical messages too.
 
 ## API Output
 
@@ -71,37 +70,14 @@ Example:
     "should_store": true,
     "signal_strength": 0.85,
     "risk_level": "low",
-    "emotion_scores": {
-      "anxiety": 0.7,
-      "sadness": 0.2,
-      "anger": 0.1,
-      "loneliness": 0.3,
-      "shame": 0.1,
-      "hopelessness": 0.1
-    },
-    "cbt_pattern_scores": {
-      "catastrophizing": 0.2,
-      "all_or_nothing": 0.1,
-      "mind_reading": 0.1,
-      "overgeneralization": 0.2,
-      "self_blame": 0.1,
-      "avoidance": 0.3
-    },
-    "theme_scores": {
-      "school": 0.2,
-      "friends": 0.3,
-      "parents": 0.2,
-      "ai_dependency": 0.1,
-      "academic_pressure": 0.3,
-      "social_rejection": 0.2,
-      "bullying": 0.1
-    },
-    "protective_signal_scores": {
-      "seeking_help": 0.4,
-      "future_orientation": 0.3,
-      "trusted_adult": 0.2,
-      "problem_solving": 0.3,
-      "social_support": 0.4
+    "scores": {
+      "positive_emotion": 15,
+      "negative_emotion": 70,
+      "loneliness": 30,
+      "anxiety_stress": 80,
+      "hopelessness": 10,
+      "self_worth_low": 20,
+      "risk": 0
     },
     "confidence": 0.85,
     "provider": "openai"
@@ -115,7 +91,6 @@ The API must not return:
 
 - raw text,
 - redacted text,
-- `summary_for_embedding`,
 - evidence phrases,
 - direct quotes.
 
@@ -138,13 +113,10 @@ Future storage must not save:
 
 ## Next Step
 
-The next step is embedding generation:
+The next step is signal-feature storage:
 
 ```text
-summary_for_embedding
-  -> embedding model
-  -> vector
-  -> store vector + signal_features + metadata
-  -> discard summary_for_embedding
+signal_features
+  -> store JSON numeric features + metadata
+  -> update fixed 10-day baseline and alert decision
 ```
-
