@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.embeddings.models import EmbeddingResult
-from safe_mind.storage.models import DailySignalRecord, UserBaseline
+from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping, UserBaseline
 
 
 class SignalVectorRecord(BaseModel):
@@ -146,6 +146,22 @@ class SQLiteVectorStore:
                 "create index if not exists idx_parent_alert_decisions_user_day "
                 "on parent_alert_decisions(child_user_id, target_day)"
             )
+            connection.execute(
+                """
+                create table if not exists next_integration_mappings (
+                    child_user_id text primary key,
+                    device_id text not null,
+                    uid text not null,
+                    external_device_id text not null,
+                    created_at text not null,
+                    updated_at text not null
+                )
+                """
+            )
+
+    def ping(self) -> None:
+        with self._connect() as connection:
+            connection.execute("select 1").fetchone()
 
     def save_signal_vector(
         self,
@@ -207,12 +223,49 @@ class SQLiteVectorStore:
         features: SignalFeatures,
         pipeline_version: str,
     ) -> str:
-        del event_id, device_id, source_app, pipeline_version
         day = occurred_at.date()
         scores = score_dict_from_model(features.scores)
         now = datetime.now(UTC)
         daily_id = str(uuid4())
+        signal_id = str(uuid4())
         with self._connect() as connection:
+            try:
+                connection.execute(
+                    """
+                    insert into signal_feature_records (
+                        id,
+                        event_id,
+                        child_user_id,
+                        device_id,
+                        occurred_at,
+                        source_app,
+                        features_json,
+                        pipeline_version,
+                        created_at
+                    )
+                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        signal_id,
+                        str(event_id),
+                        str(child_user_id),
+                        str(device_id),
+                        occurred_at.isoformat(),
+                        source_app,
+                        features.model_dump_json(),
+                        pipeline_version,
+                        now.isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError:
+                row = connection.execute(
+                    "select id from signal_feature_records where event_id = ?",
+                    (str(event_id),),
+                ).fetchone()
+                if row:
+                    return str(row[0])
+                raise
+
             row = connection.execute(
                 """
                 select id, message_count, scores_json, created_at
@@ -267,8 +320,7 @@ class SQLiteVectorStore:
                     now.isoformat(),
                 ),
             )
-        self._rebuild_daily_state(child_user_id)
-        return daily_id
+        return signal_id
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
         with self._connect() as connection:
@@ -440,6 +492,70 @@ class SQLiteVectorStore:
         with self._connect() as connection:
             row = connection.execute("select count(*) from signal_vectors").fetchone()
         return int(row[0])
+
+    def rebuild_daily_state(self, child_user_id: UUID) -> None:
+        self._rebuild_daily_state(child_user_id)
+
+    def save_next_integration_mapping(
+        self,
+        *,
+        child_user_id: UUID,
+        device_id: UUID,
+        uid: str,
+        external_device_id: str,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "select created_at from next_integration_mappings where child_user_id = ?",
+                (str(child_user_id),),
+            ).fetchone()
+            created_at = row[0] if row else now
+            connection.execute(
+                """
+                insert into next_integration_mappings (
+                    child_user_id, device_id, uid, external_device_id, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?)
+                on conflict(child_user_id) do update set
+                    device_id = excluded.device_id,
+                    uid = excluded.uid,
+                    external_device_id = excluded.external_device_id,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(child_user_id),
+                    str(device_id),
+                    uid,
+                    external_device_id,
+                    created_at,
+                    now,
+                ),
+            )
+
+    def get_next_integration_mapping(
+        self,
+        child_user_id: UUID,
+    ) -> NextIntegrationMapping | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select child_user_id, device_id, uid, external_device_id, created_at, updated_at
+                from next_integration_mappings
+                where child_user_id = ?
+                """,
+                (str(child_user_id),),
+            ).fetchone()
+        if not row:
+            return None
+        return NextIntegrationMapping(
+            child_user_id=UUID(row[0]),
+            device_id=UUID(row[1]),
+            uid=row[2],
+            external_device_id=row[3],
+            created_at=datetime.fromisoformat(row[4]),
+            updated_at=datetime.fromisoformat(row[5]),
+        )
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)

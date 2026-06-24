@@ -28,7 +28,7 @@ def test_debug_pipeline_does_not_create_embedding_when_vector_requested(monkeypa
     assert storage_log.output["storage_kind"] == "json_signal_features"
 
 
-def test_pipeline_stores_signal_features_and_evaluates_alert_without_embedding(monkeypatch, tmp_path) -> None:
+def test_pipeline_stores_signal_features_without_alert_decision(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("safe_mind.core.config.settings.signal_db_path", str(tmp_path / "signals.sqlite3"))
     monkeypatch.setattr("safe_mind.core.config.settings.enable_embeddings", False)
 
@@ -38,7 +38,7 @@ def test_pipeline_stores_signal_features_and_evaluates_alert_without_embedding(m
     assert result.stored_signal.signal_id
     assert result.stored_signal.vector_id is None
     assert result.stored_signal.embedding_model is None
-    assert result.alert_decision is not None
+    assert result.alert_decision is None
 
 
 def test_debug_pipeline_reports_analyzer_model_error_without_fallback(monkeypatch) -> None:

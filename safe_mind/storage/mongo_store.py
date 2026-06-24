@@ -1,11 +1,12 @@
 from datetime import UTC, date, datetime
+from threading import Lock
 from typing import Any
 from uuid import UUID, uuid4
 
 from safe_mind.alerts.engine import rebuild_daily_alert_state, score_dict_from_model
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
-from safe_mind.storage.models import DailySignalRecord
+from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping
 
 
 class MongoSignalStore:
@@ -15,17 +16,30 @@ class MongoSignalStore:
         self.uri = uri
         self.database_name = database
         self._client = None
+        self._initialized = False
+        self._initialize_lock = Lock()
 
     def initialize(self) -> None:
-        client = self._get_client()
-        client.admin.command("ping")
-        db = client[self.database_name]
-        db.daily_signal_scores.create_index(
-            [("child_user_id", 1), ("day", 1)],
-            unique=True,
-        )
-        db.daily_signal_scores.create_index([("child_user_id", 1), ("should_send_alert", 1)])
-        db.user_baselines.create_index("child_user_id", unique=True)
+        if self._initialized:
+            return
+        with self._initialize_lock:
+            if self._initialized:
+                return
+            self.ping()
+            db = self._get_client()[self.database_name]
+            db.daily_signal_scores.create_index(
+                [("child_user_id", 1), ("day", 1)],
+                unique=True,
+            )
+            db.daily_signal_scores.create_index([("child_user_id", 1), ("should_send_alert", 1)])
+            db.message_events.create_index("event_id", unique=True)
+            db.message_events.create_index([("child_user_id", 1), ("day", 1)])
+            db.next_integration_mappings.create_index("child_user_id", unique=True)
+            db.user_baselines.create_index("child_user_id", unique=True)
+            self._initialized = True
+
+    def ping(self) -> None:
+        self._get_client().admin.command("ping")
 
     def save_signal_features(
         self,
@@ -38,54 +52,55 @@ class MongoSignalStore:
         features: SignalFeatures,
         pipeline_version: str,
     ) -> str:
-        del event_id, device_id, source_app, pipeline_version
         day = occurred_at.date()
         scores = score_dict_from_model(features.scores)
         collection = self._db().daily_signal_scores
-        existing = collection.find_one({"child_user_id": str(child_user_id), "day": day.isoformat()})
         now = datetime.now(UTC)
-        if existing:
-            daily_id = existing["id"]
-            previous_count = int(existing["message_count"])
-            message_count = previous_count + 1
-            previous_scores = existing["scores"]
-            created_at = existing["created_at"]
-        else:
-            daily_id = str(uuid4())
-            previous_count = 0
-            message_count = 1
-            previous_scores = {key: 0.0 for key in scores}
-            created_at = now
+        signal_id = str(uuid4())
 
-        averaged = {
-            key: ((float(previous_scores.get(key, 0.0)) * previous_count) + value) / message_count
-            for key, value in scores.items()
-        }
+        if not self._claim_message_event(
+            event_id=event_id,
+            signal_id=signal_id,
+            child_user_id=child_user_id,
+            device_id=device_id,
+            day=day,
+            occurred_at=occurred_at,
+            source_app=source_app,
+            pipeline_version=pipeline_version,
+            created_at=now,
+        ):
+            existing_event = self._db().message_events.find_one(
+                {"event_id": str(event_id)},
+                {"id": 1},
+            )
+            if not existing_event:
+                raise RuntimeError("Duplicate message event was detected but not found.")
+            return str(existing_event["id"])
+
+        daily_id = str(uuid4())
         collection.update_one(
             {"child_user_id": str(child_user_id), "day": day.isoformat()},
-            {
-                "$set": {
-                    "child_user_id": str(child_user_id),
-                    "day": day.isoformat(),
-                    "message_count": message_count,
-                    "scores": averaged,
-                    "updated_at": now,
-                },
-                "$setOnInsert": {
-                    "id": daily_id,
-                    "created_at": created_at,
-                    "baseline_day_count": 0,
-                    "is_baseline_day": False,
-                    "is_flagged": False,
-                    "should_send_alert": False,
-                    "deviations_in_window": 0,
-                    "alert_reason": "insufficient_baseline",
-                },
-            },
+            _atomic_daily_average_update(
+                daily_id=daily_id,
+                child_user_id=child_user_id,
+                day=day,
+                scores=scores,
+                now=now,
+            ),
             upsert=True,
         )
-        self._rebuild_daily_state(child_user_id)
-        return daily_id
+        daily_record = collection.find_one(
+            {"child_user_id": str(child_user_id), "day": day.isoformat()},
+            {"id": 1},
+        )
+        if not daily_record or not daily_record.get("id"):
+            raise RuntimeError("MongoDB did not return a daily signal score id.")
+        daily_id = str(daily_record["id"])
+        self._db().message_events.update_one(
+            {"event_id": str(event_id)},
+            {"$set": {"daily_signal_score_id": daily_id, "updated_at": now}},
+        )
+        return signal_id
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
         rows = self._db().daily_signal_scores.find(
@@ -175,6 +190,49 @@ class MongoSignalStore:
     def count(self) -> int:
         return int(self._db().daily_signal_scores.count_documents({}))
 
+    def rebuild_daily_state(self, child_user_id: UUID) -> None:
+        self._rebuild_daily_state(child_user_id)
+
+    def save_next_integration_mapping(
+        self,
+        *,
+        child_user_id: UUID,
+        device_id: UUID,
+        uid: str,
+        external_device_id: str,
+    ) -> None:
+        now = datetime.now(UTC)
+        self._db().next_integration_mappings.update_one(
+            {"child_user_id": str(child_user_id)},
+            {
+                "$set": {
+                    "child_user_id": str(child_user_id),
+                    "device_id": str(device_id),
+                    "uid": uid,
+                    "external_device_id": external_device_id,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+
+    def get_next_integration_mapping(
+        self,
+        child_user_id: UUID,
+    ) -> NextIntegrationMapping | None:
+        row = self._db().next_integration_mappings.find_one({"child_user_id": str(child_user_id)})
+        if not row:
+            return None
+        return NextIntegrationMapping(
+            child_user_id=UUID(row["child_user_id"]),
+            device_id=UUID(row["device_id"]),
+            uid=row["uid"],
+            external_device_id=row["external_device_id"],
+            created_at=_as_datetime(row["created_at"]),
+            updated_at=_as_datetime(row["updated_at"]),
+        )
+
     def _db(self) -> Any:
         return self._get_client()[self.database_name]
 
@@ -186,8 +244,50 @@ class MongoSignalStore:
                 raise RuntimeError(
                     "pymongo is required for MongoDB storage. Install project dependencies first."
                 ) from exc
-            self._client = MongoClient(self.uri, serverSelectionTimeoutMS=5000)
+            self._client = MongoClient(
+                self.uri,
+                serverSelectionTimeoutMS=5000,
+                connectTimeoutMS=5000,
+                socketTimeoutMS=10000,
+                maxPoolSize=50,
+                retryWrites=True,
+            )
         return self._client
+
+    def _claim_message_event(
+        self,
+        *,
+        event_id: UUID,
+        signal_id: str,
+        child_user_id: UUID,
+        device_id: UUID,
+        day: date,
+        occurred_at: datetime,
+        source_app: str | None,
+        pipeline_version: str,
+        created_at: datetime,
+    ) -> bool:
+        try:
+            self._db().message_events.insert_one(
+                {
+                    "id": signal_id,
+                    "event_id": str(event_id),
+                    "child_user_id": str(child_user_id),
+                    "device_id": str(device_id),
+                    "day": day.isoformat(),
+                    "occurred_at": occurred_at,
+                    "source_app": source_app,
+                    "pipeline_version": pipeline_version,
+                    "created_at": created_at,
+                    "updated_at": created_at,
+                    "status": "received",
+                }
+            )
+            return True
+        except Exception as exc:
+            if _is_duplicate_key_error(exc):
+                return False
+            raise
 
     def _rebuild_daily_state(self, child_user_id: UUID) -> None:
         records, baseline_scores, _baseline_score = rebuild_daily_alert_state(
@@ -253,3 +353,61 @@ def _as_date(value: Any) -> date:
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value)).date()
+
+
+def _atomic_daily_average_update(
+    *,
+    daily_id: str,
+    child_user_id: UUID,
+    day: date,
+    scores: dict[str, float],
+    now: datetime,
+) -> list[dict[str, Any]]:
+    previous_count = {"$ifNull": ["$message_count", 0]}
+    next_count = {"$add": [previous_count, 1]}
+    averaged_scores = {
+        key: {
+            "$divide": [
+                {
+                    "$add": [
+                        {
+                            "$multiply": [
+                                {"$ifNull": [f"$scores.{key}", 0.0]},
+                                previous_count,
+                            ]
+                        },
+                        value,
+                    ]
+                },
+                next_count,
+            ]
+        }
+        for key, value in scores.items()
+    }
+    return [
+        {
+            "$set": {
+                "id": {"$ifNull": ["$id", daily_id]},
+                "child_user_id": str(child_user_id),
+                "day": day.isoformat(),
+                "message_count": next_count,
+                "scores": averaged_scores,
+                "updated_at": now,
+                "created_at": {"$ifNull": ["$created_at", now]},
+                "baseline_day_count": {"$ifNull": ["$baseline_day_count", 0]},
+                "is_baseline_day": {"$ifNull": ["$is_baseline_day", False]},
+                "is_flagged": {"$ifNull": ["$is_flagged", False]},
+                "should_send_alert": {"$ifNull": ["$should_send_alert", False]},
+                "deviations_in_window": {"$ifNull": ["$deviations_in_window", 0]},
+                "alert_reason": {"$ifNull": ["$alert_reason", "insufficient_baseline"]},
+            }
+        }
+    ]
+
+
+def _is_duplicate_key_error(exc: Exception) -> bool:
+    try:
+        from pymongo.errors import DuplicateKeyError
+    except ImportError:
+        return False
+    return isinstance(exc, DuplicateKeyError)

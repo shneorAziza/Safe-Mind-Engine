@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     mongodb_database: str = Field(default="safe_mind", alias="SAFE_MIND_MONGODB_DATABASE")
     pipeline_version: str = Field(default="v1", alias="SAFE_MIND_PIPELINE_VERSION")
     persist_signals: bool = Field(default=True, alias="SAFE_MIND_PERSIST_SIGNALS")
+    eval_auth_username: str = Field(default="safemind", alias="SAFE_MIND_EVAL_AUTH_USERNAME")
+    eval_auth_password: str | None = Field(default=None, alias="SAFE_MIND_EVAL_AUTH_PASSWORD")
+    integration_api_token: str | None = Field(default=None, alias="SAFE_MIND_INTEGRATION_API_TOKEN")
+    next_alert_callback_url: str | None = Field(default=None, alias="SAFE_MIND_NEXT_ALERT_CALLBACK_URL")
+    next_alert_callback_token: str | None = Field(default=None, alias="SAFE_MIND_NEXT_ALERT_CALLBACK_TOKEN")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
     model_config = SettingsConfigDict(

@@ -135,7 +135,7 @@ def process_message(
     alert_decision: ParentAlertDecision | None = None
     if psychological_analysis.features.should_store:
         if persist:
-            stored_signal, alert_decision = _store_signal_features_and_evaluate_alert(
+            stored_signal = _store_signal_features(
                 payload,
                 psychological_analysis.features,
             )
@@ -276,10 +276,10 @@ def _store_embedding_and_evaluate_alert(
     ), alert_decision
 
 
-def _store_signal_features_and_evaluate_alert(
+def _store_signal_features(
     payload: IngestMessageRequest,
     features: SignalFeatures,
-) -> tuple[StoredSignal, ParentAlertDecision]:
+) -> StoredSignal:
     store = get_signal_store()
     store.initialize()
     signal_id = store.save_signal_features(
@@ -291,9 +291,4 @@ def _store_signal_features_and_evaluate_alert(
         features=features,
         pipeline_version=settings.pipeline_version,
     )
-    alert_decision = evaluate_parent_alert(
-        child_user_id=payload.child_user_id,
-        records=store.list_signal_records_for_child(payload.child_user_id),
-        target_day=payload.occurred_at.date(),
-    )
-    return StoredSignal(stored=True, signal_id=signal_id, daily_score_id=signal_id), alert_decision
+    return StoredSignal(stored=True, signal_id=signal_id, daily_score_id=signal_id)

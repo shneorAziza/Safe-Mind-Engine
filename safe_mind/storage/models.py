@@ -39,3 +39,12 @@ class UserBaseline(BaseModel):
     baseline_day_count: int = Field(ge=1)
     scores: dict[str, float]
     is_final: bool = True
+
+
+class NextIntegrationMapping(BaseModel):
+    child_user_id: UUID
+    device_id: UUID
+    uid: str
+    external_device_id: str
+    created_at: datetime
+    updated_at: datetime

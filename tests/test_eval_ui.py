@@ -6,6 +6,15 @@ from safe_mind.storage.models import DailySignalRecord
 from uuid import UUID, uuid4
 from datetime import UTC, datetime
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _default_eval_auth_settings(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.env", "local")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_username", "safemind")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", None)
+
 
 def test_eval_page_loads() -> None:
     client = TestClient(app)
@@ -19,6 +28,39 @@ def test_eval_page_loads() -> None:
     assert "Current test user is synthetic but stored in the real local DB" in response.text
     assert "load the last 30 days" in response.text
     assert "real configured models with no silent heuristic fallback" in response.text
+
+
+def test_eval_requires_auth_when_password_is_configured(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_username", "team")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", "secret")
+    client = TestClient(app)
+
+    response = client.get("/eval")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Basic"
+
+
+def test_eval_accepts_configured_basic_auth(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_username", "team")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", "secret")
+    client = TestClient(app)
+
+    response = client.get("/eval", auth=("team", "secret"))
+
+    assert response.status_code == 200
+    assert "SafeMind Pipeline Eval" in response.text
+
+
+def test_eval_fails_closed_in_production_without_password(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.env", "production")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", None)
+    client = TestClient(app)
+
+    response = client.get("/eval")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Eval auth password is not configured."
 
 
 def test_eval_run_accepts_multiple_messages_without_vector() -> None:

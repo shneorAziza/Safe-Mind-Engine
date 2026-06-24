@@ -17,7 +17,7 @@ class IngestMessageRequest(BaseModel):
     occurred_at: datetime
     source_type: Literal["notification", "share_intent", "accessibility", "manual"]
     source_app: str | None = Field(default=None, max_length=120)
-    text: str = Field(min_length=1, max_length=8000)
+    text: str = Field(min_length=1, max_length=10000)
     locale: str | None = Field(default=None, max_length=16)
 
 

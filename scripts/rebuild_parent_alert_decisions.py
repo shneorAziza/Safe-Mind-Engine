@@ -1,4 +1,4 @@
-from safe_mind.alerts.engine import evaluate_parent_alert
+from safe_mind.alerts.finalization import finalize_alert_day
 from safe_mind.storage.factory import get_signal_store
 
 
@@ -20,17 +20,16 @@ def main() -> None:
 
         previous_alert_days = []
         for record in records:
-            target_day = record.occurred_at.date()
-            decision = evaluate_parent_alert(
+            decision = finalize_alert_day(
                 child_user_id=child_user_id,
-                records=records,
-                target_day=target_day,
-                previous_alert_days=previous_alert_days,
+                target_day=record.day,
+                store=store,
             )
-            store.save_parent_alert_decision(decision)
+            if decision is None:
+                continue
             total_saved += 1
             if decision.should_send_push:
-                previous_alert_days.append(target_day)
+                previous_alert_days.append(record.day)
 
         print(
             f"rebuilt child_user_id={child_user_id} "

@@ -1,8 +1,8 @@
 # SafeMind Backend
 
-SafeMind is a FastAPI backend pilot for receiving child-device message events, analyzing psychological signal metrics, building a personal baseline, and deciding when a parent alert should be raised.
+SafeMind is a FastAPI backend pilot for receiving child-device message events, analyzing psychological signal metrics, building a personal baseline, and finalizing parent alert decisions on closed calendar days.
 
-The current app is backend + internal evaluation tooling. It does not send real push notifications yet.
+The current app is backend + internal evaluation tooling. It can send outbound alert callbacks to the Firebase/Next backend, which is responsible for parent push delivery.
 
 ## How The System Works
 
@@ -11,9 +11,13 @@ Incoming message
   -> privacy redaction
   -> psychological analyzer
   -> daily metric aggregation
-  -> fixed 10-day baseline
-  -> deviation detection
-  -> alert decision after 3 flagged days in a row
+  -> acknowledgement
+
+Daily finalization, usually at 00:05:
+  -> evaluate the previous calendar day
+  -> compare the finalized daily average to the fixed 10-day baseline
+  -> update deviation state
+  -> send outbound callback after 3 finalized flagged days in a row
 ```
 
 Every incoming message is privacy-cleaned and analyzed. The model returns 1-10 scores for:
@@ -28,7 +32,7 @@ self_worth_low
 risk
 ```
 
-The DB stores one daily record per child user per calendar day. Multiple messages on the same day are averaged into the same `scores` object.
+The DB stores one daily record per child user per calendar day. Multiple messages on the same day are averaged into the same `scores` object. Incoming message requests never trigger parent push delivery directly.
 
 ## Storage Model
 
@@ -37,6 +41,9 @@ MongoDB Atlas is the current working DB for the pilot.
 Main collections:
 
 - `daily_signal_scores`: one document per child user per day.
+- `message_events`: idempotency records keyed by incoming event/message id.
+- `next_integration_mappings`: maps internal IDs back to Firebase `uid` and `deviceId`.
+- `parent_alert_decisions`: finalized alert decisions.
 - `user_baselines`: one fixed 10-day baseline vector per child user.
 
 Daily records intentionally do not store:
@@ -79,6 +86,11 @@ SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 SAFE_MIND_ENABLE_EMBEDDINGS=false
 SAFE_MIND_PERSIST_SIGNALS=true
+SAFE_MIND_EVAL_AUTH_USERNAME=safemind
+SAFE_MIND_EVAL_AUTH_PASSWORD=<team password>
+SAFE_MIND_INTEGRATION_API_TOKEN=<shared token for Next backend calls into this service>
+SAFE_MIND_NEXT_ALERT_CALLBACK_URL=<Next backend /api/alerts URL>
+SAFE_MIND_NEXT_ALERT_CALLBACK_TOKEN=<shared token for callbacks to Next>
 OPENAI_API_KEY=<your OpenAI key>
 ```
 
@@ -96,13 +108,63 @@ Open:
 http://127.0.0.1:8000/eval
 ```
 
-Health check:
+Health and metrics:
 
 ```text
 http://127.0.0.1:8000/health
+http://127.0.0.1:8000/health/live
+http://127.0.0.1:8000/health/ready
+http://127.0.0.1:8000/metrics
 ```
 
 ## Main API
+
+### Firebase/Next Backend Integration
+
+The preferred product integration is the Firebase/Next backend gateway:
+
+```http
+POST /v1/integrations/next/messages
+Authorization: Bearer <SAFE_MIND_INTEGRATION_API_TOKEN>
+```
+
+Example body:
+
+```json
+{
+  "uid": "firebase-user-id",
+  "deviceId": "firestore-device-id",
+  "messages": [
+    {
+      "messageId": "stable-device-message-id",
+      "text": "I feel overwhelmed and cannot sleep.",
+      "timestamp": 1780000000000,
+      "sourceApp": "com.openai.chatgpt",
+      "locale": "en"
+    }
+  ]
+}
+```
+
+The response is acknowledgement-only:
+
+```json
+{
+  "received": 1,
+  "accepted": 1,
+  "childUserId": "...",
+  "deviceId": "...",
+  "events": [
+    {
+      "messageId": "stable-device-message-id",
+      "eventId": "...",
+      "status": "accepted"
+    }
+  ]
+}
+```
+
+### Direct Internal Ingestion
 
 ```http
 POST /v1/ingest/messages
@@ -135,7 +197,27 @@ Use it to:
 - inspect alert timelines,
 - verify baseline days, flagged days, alert days, and reasons.
 
-This dashboard is internal only.
+This dashboard is internal only. When `SAFE_MIND_EVAL_AUTH_PASSWORD` is configured, it requires HTTP Basic Auth. In production, missing Eval auth configuration fails closed.
+
+## Daily Finalization
+
+Finalize the previous closed day:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py
+```
+
+Finalize a specific day:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --target-day 2026-07-19
+```
+
+Finalize and send outbound alert callbacks:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --send-alerts
+```
 
 ## Seed Demo Data
 
@@ -170,7 +252,7 @@ The script prints the generated `child_user_id`. Use it in the Eval dashboard ti
 Current expected result:
 
 ```text
-27 passed
+47 passed
 ```
 
 ## Important Docs

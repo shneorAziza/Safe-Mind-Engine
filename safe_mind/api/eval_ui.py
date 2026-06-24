@@ -1,9 +1,11 @@
+import secrets
 from datetime import UTC, date, datetime, time, timedelta
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
 from safe_mind.alerts.engine import build_alert_timeline
@@ -15,7 +17,37 @@ from safe_mind.schemas.ingestion import IngestMessageRequest
 from safe_mind.storage.factory import get_signal_store
 from safe_mind.storage.models import StoredSignal
 
-router = APIRouter(tags=["eval-ui"])
+security = HTTPBasic(auto_error=False)
+
+
+def require_eval_auth(credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
+    password = settings.eval_auth_password
+    if not password:
+        if settings.env.lower() == "production":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Eval auth password is not configured.",
+            )
+        return
+
+    if credentials is None:
+        raise _auth_error()
+
+    username_ok = secrets.compare_digest(credentials.username, settings.eval_auth_username)
+    password_ok = secrets.compare_digest(credentials.password, password)
+    if not username_ok or not password_ok:
+        raise _auth_error()
+
+
+def _auth_error() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Eval authentication required.",
+        headers={"WWW-Authenticate": "Basic"},
+    )
+
+
+router = APIRouter(tags=["eval-ui"], dependencies=[Depends(require_eval_auth)])
 
 
 class EvalRuntimeInfo(BaseModel):

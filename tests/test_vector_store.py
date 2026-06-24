@@ -29,8 +29,8 @@ def test_sqlite_store_saves_signal_features_and_no_text_or_vector(tmp_path) -> N
 
     with store._connect() as connection:
         row = connection.execute(
-            "select scores_json from daily_signal_scores where id = ?",
-            (signal_id,),
+            "select scores_json from daily_signal_scores where child_user_id = ?",
+            (str(records[0].child_user_id),),
         ).fetchone()
 
     stored = json.dumps({"scores_json": row[0]})
@@ -47,7 +47,7 @@ def test_sqlite_store_averages_multiple_messages_into_one_daily_score(tmp_path) 
     device_id = uuid4()
     occurred_at = datetime(2026, 7, 1, 9, tzinfo=UTC)
 
-    first_id = store.save_signal_features(
+    store.save_signal_features(
         event_id=uuid4(),
         child_user_id=child_user_id,
         device_id=device_id,
@@ -56,7 +56,7 @@ def test_sqlite_store_averages_multiple_messages_into_one_daily_score(tmp_path) 
         features=_features(negative_emotion=8),
         pipeline_version="test",
     )
-    second_id = store.save_signal_features(
+    store.save_signal_features(
         event_id=uuid4(),
         child_user_id=child_user_id,
         device_id=device_id,
@@ -67,10 +67,43 @@ def test_sqlite_store_averages_multiple_messages_into_one_daily_score(tmp_path) 
     )
 
     records = store.list_signal_records_for_child(child_user_id)
-    assert first_id == second_id
     assert len(records) == 1
     assert records[0].message_count == 2
     assert records[0].scores["negative_emotion"] == 6
+
+
+def test_sqlite_store_ignores_duplicate_event_id(tmp_path) -> None:
+    store = SQLiteVectorStore(tmp_path / "signals.sqlite3")
+    store.initialize()
+    event_id = uuid4()
+    child_user_id = uuid4()
+    device_id = uuid4()
+    occurred_at = datetime(2026, 7, 1, 9, tzinfo=UTC)
+
+    first_id = store.save_signal_features(
+        event_id=event_id,
+        child_user_id=child_user_id,
+        device_id=device_id,
+        occurred_at=occurred_at,
+        source_app="chatgpt",
+        features=_features(negative_emotion=8),
+        pipeline_version="test",
+    )
+    duplicate_id = store.save_signal_features(
+        event_id=event_id,
+        child_user_id=child_user_id,
+        device_id=device_id,
+        occurred_at=occurred_at,
+        source_app="chatgpt",
+        features=_features(negative_emotion=2),
+        pipeline_version="test",
+    )
+
+    records = store.list_signal_records_for_child(child_user_id)
+    assert duplicate_id == first_id
+    assert len(records) == 1
+    assert records[0].message_count == 1
+    assert records[0].scores["negative_emotion"] == 8
 
 
 def test_legacy_vector_store_is_still_available_for_future_reenablement(tmp_path) -> None:

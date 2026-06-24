@@ -9,39 +9,45 @@ Out of scope today:
 - Android collection implementation
 - child-facing product UI
 - parent-facing product UI
-- production push delivery service
-- production database and auth stack
+- real push delivery implementation
 
 In scope today:
 
 - ingesting child-device message events
 - privacy redaction before model calls
-- emotional relevance filtering
 - psychological signal extraction
 - compact signal-feature storage
-- daily alert-decision logic
+- closed-day daily alert-decision logic
+- outbound callback to the Firebase/Next backend for push decisions
+- MongoDB Atlas production storage
+- health/readiness checks and basic metrics
 - internal evaluation and dashboard tooling
 
 ## Current Built Flow
 
 ```text
-POST /v1/ingest/messages
+POST /v1/integrations/next/messages
   -> privacy redaction
-  -> emotional relevance filter
   -> psychological analyzer
-  -> SQLite signal-feature storage
-  -> daily alert decision
+  -> MongoDB daily signal aggregation
+  -> acknowledgement only
+
+scripts/finalize_previous_day.py --send-alerts
+  -> evaluate previous closed day
+  -> update finalized alert decision
+  -> callback to Firebase/Next backend when push should be sent
 ```
 
 ## Target Product Flow
 
 ```text
 Child device
-  -> Backend ingestion
+  -> Firebase/Next backend ingestion
+  -> SafeMind analyzer backend
   -> Privacy-first AI pipeline
   -> Stored numeric features only
-  -> Fixed baseline + deviation detection
-  -> Parent notification service
+  -> Fixed baseline + closed-day deviation detection
+  -> Firebase/Next parent notification service
 ```
 
 ## Key Modules
@@ -51,6 +57,8 @@ safe_mind/
   api/
     health.py
     ingestion.py
+    metrics.py
+    next_integration.py
     eval_ui.py
   core/
     config.py
@@ -71,7 +79,12 @@ safe_mind/
   alerts/
     models.py
     engine.py
+    finalization.py
+    finalization_job.py
+  integrations/
+    next_alerts.py
   storage/
+    mongo_store.py
     vector_store.py
   pipeline.py
 ```
@@ -79,7 +92,7 @@ safe_mind/
 ## Storage Model
 
 MongoDB Atlas is used for the real pilot signal store. SQLite remains available
-as a local fallback for tests and offline development.
+as a local fallback for tests and offline development. Production rejects SQLite.
 
 Stored data includes:
 
@@ -102,22 +115,34 @@ The internal alert engine now works over compact stored psychological scores.
 Current policy:
 
 - first 10 calendar days form a fixed personal baseline
-- each day gets a daily score from that day's compact psychological scores
-- baseline score is the average score during the baseline window
-- a deviation requires `daily_score - baseline_score >= 0.2`
-- a push decision requires `3 deviations in 5 days`
-- cooldown suppresses immediate repeat pushes
+- each day gets a metric vector from that day's compact psychological scores
+- baseline vector is the average vector during the baseline window
+- a deviation is based on per-metric thresholds from baseline
+- a push decision requires `3 consecutive finalized deviation days`
+- ingestion can update same-day averages, but push decisions are only sent after closed-day finalization
 
 ## Evaluation Surfaces
 
-There are two internal evaluation paths:
+The active internal evaluation surface is the visual Eval UI:
 
-- dataset-based filter evaluation
-  - [evaluation.md](evaluation.md)
-- visual pipeline and alert inspection
-  - [eval-ui.md](eval-ui.md)
+- [eval-ui.md](eval-ui.md)
 
 The Eval UI now covers both:
 
 - per-message pipeline stages
 - per-user 30-day alert dashboards
+
+## Operations
+
+Runtime health:
+
+```text
+GET /health/live
+GET /health/ready
+```
+
+Basic pilot metrics:
+
+```text
+GET /metrics
+```

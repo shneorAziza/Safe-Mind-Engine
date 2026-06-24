@@ -11,16 +11,14 @@ Use them to understand:
 - how the alert engine works,
 - what to update when a stage is completed.
 
+`AI_AGENT_CONTEXT.md` is the source of truth. Keep secondary docs short and delete them when they become stale.
+
 ## Start Here
 
-1. [AI_AGENT_CONTEXT.md](AI_AGENT_CONTEXT.md) - main context file for a new AI agent.
-2. [handoff.md](handoff.md) - older handoff summary.
-3. [architecture.md](architecture.md) - system boundaries and architecture.
-4. [pipeline.md](pipeline.md) - current pipeline walkthrough.
-5. [psychological-analyzer.md](psychological-analyzer.md) - signal analyzer stage.
-6. [embedding-vector-store.md](embedding-vector-store.md) - embeddings and vector storage.
-7. [eval-ui.md](eval-ui.md) - internal visual evaluation UI.
-8. [evaluation.md](evaluation.md) - first-stage filter dataset evaluation.
+1. [AI_AGENT_CONTEXT.md](AI_AGENT_CONTEXT.md) - source of truth for product intent, runtime flow, storage rules, and operational workflows.
+2. [architecture.md](architecture.md) - system boundaries and architecture.
+3. [pipeline.md](pipeline.md) - current ingestion and closed-day finalization walkthrough.
+4. [eval-ui.md](eval-ui.md) - internal visual evaluation UI.
 
 ## Docs Policy
 

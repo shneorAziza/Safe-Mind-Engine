@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The backend now supports the full internal alert-evaluation loop without a first-stage message filter.
+The backend supports message ingestion, privacy-first psychological scoring, daily aggregation, and closed-day alert finalization without a first-stage message filter.
 
 ```text
 message
@@ -10,13 +10,28 @@ message
   -> psychological signal analysis
   -> compact JSON signal scores
   -> signal-feature storage
-  -> daily trend + alert decision
+  -> daily aggregation
+  -> acknowledgement
+
+closed-day finalization
+  -> baseline/deviation evaluation
+  -> parent alert decision
+  -> optional outbound callback to Firebase/Next backend
 ```
 
-The parent-facing app and push delivery service are still out of scope.
-What exists today is the backend decision engine that can decide whether a parent push should be sent.
+The parent-facing app and real push delivery are handled by the Firebase/Next backend. This service can call that backend when a finalized alert should be sent.
 
 ## Endpoint
+
+Preferred product integration:
+
+```http
+POST /v1/integrations/next/messages
+```
+
+This endpoint accepts Firebase `uid`, Firestore `deviceId`, and a batch of messages. It returns an acknowledgement only; alert decisions are produced later by closed-day finalization.
+
+Internal/debug endpoint:
 
 ```http
 POST /v1/ingest/messages
@@ -99,21 +114,22 @@ The following are not stored:
 - summary text
 - quotes
 
-## Stage 4: Trend and Alert Decision
+## Stage 4: Closed-Day Trend and Alert Decision
 
 Files:
 
 - [safe_mind/alerts/engine.py](../safe_mind/alerts/engine.py)
+- [safe_mind/alerts/finalization.py](../safe_mind/alerts/finalization.py)
+- [safe_mind/alerts/finalization_job.py](../safe_mind/alerts/finalization_job.py)
 - [safe_mind/alerts/models.py](../safe_mind/alerts/models.py)
 
-After storage, the engine evaluates the child's alert state:
+After the calendar day closes, the finalization flow evaluates the child's alert state:
 
 - fixed baseline from the first 10 calendar days
-- daily score from that day's compact psychological scores
-- baseline score from the average baseline-day scores
-- deviation threshold of `+0.2` over baseline score
-- alert gate of `3 consecutive deviation days`
-- cooldown after a `send` decision
+- daily vector from that day's compact psychological scores
+- baseline vector from the average baseline-day scores
+- per-metric deviation thresholds
+- alert gate of `3 consecutive finalized deviation days`
 
 The output is an internal `ParentAlertDecision`.
 
@@ -124,6 +140,13 @@ The ingestion response includes:
 - privacy summary
 - signal features
 - storage summary
-- `alert_decision` when a stored signal triggered trend evaluation
 
-The endpoint does not send a real push notification. It only records whether the engine would send one.
+The Firebase/Next integration response is acknowledgement-only and does not include alert decisions.
+
+## Daily Finalization Script
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --send-alerts
+```
+
+At `00:05`, this evaluates the previous calendar day and sends callbacks only for finalized push decisions.

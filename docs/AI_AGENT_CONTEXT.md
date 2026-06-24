@@ -8,28 +8,38 @@ Read this file before changing code. The older files in `docs/` are secondary re
 
 SafeMind is a backend pilot that receives child-device text messages, removes private information, analyzes psychological signal metrics, builds a personal baseline, and raises an internal alert when the child shows a meaningful multi-day deviation from their own baseline.
 
-The current system does not send real push notifications yet. It decides whether a notification should be sent and exposes that decision in the internal Eval dashboard.
+The current system does not send real push notifications itself. It finalizes whether a notification should be sent, then can call the Firebase/Next backend through an outbound alert callback. The Firebase/Next backend is responsible for storing/displaying the alert and sending the real push notification.
 
-## Current Real-Time Pipeline
+## Current Message Ingestion Pipeline
 
 ```text
 Incoming message
   -> privacy redaction
   -> psychological analyzer
   -> daily metric aggregation
-  -> baseline/deviation engine
-  -> internal alert decision
+  -> acknowledgement to sender
 ```
 
 There is no active first-stage emotional filter in the pilot flow. Every message is privacy-cleaned and then analyzed.
+The realtime ingestion path does not send parent alerts immediately. Parent alert decisions are produced by a separate daily evaluation flow.
 
 ## What Happens Per Message
 
-1. `POST /v1/ingest/messages` receives one message event.
+1. `POST /v1/integrations/next/messages` receives a Firebase/Next batch, or `POST /v1/ingest/messages` receives one internal message event.
 2. The privacy redactor removes PII patterns before the model call.
 3. The psychological analyzer returns numeric scores from 1 to 10.
 4. The store updates exactly one daily record for the child and calendar day.
-5. The alert engine rebuilds the child's daily state and decides whether the current day is flagged or should send an alert.
+5. The ingestion endpoint acknowledges the accepted event. Alert decisions are not part of the sender-facing response.
+
+The Firebase/Next integration endpoint also stores a mapping from internal IDs to the external Firebase `uid` and Firestore `deviceId`, so later alert callbacks can be routed back to the right parent/device.
+
+## Daily Alert Evaluation
+
+Parent alert decisions are evaluated once the calendar day has ended.
+
+At `00:05` on a given date, the system evaluates the previous calendar day. For example, at `2026-06-25 00:05`, it evaluates the average scores for `2026-06-24`, compares that day to the child's baseline, updates the deviation/flag state, and only then decides whether a parent alert should be sent.
+
+The outbound parent alert is a separate server-to-server call from SafeMind to the Firebase/Next backend. It is not coupled to the timing of incoming message requests.
 
 ## Psychological Metrics
 
@@ -127,6 +137,42 @@ should_send_alert
 alert_reason
 ```
 
+### `message_events`
+
+One idempotency document per received message event. This prevents retries with the same `messageId`/`event_id` from changing daily averages twice.
+
+Expected fields:
+
+```text
+id
+event_id
+child_user_id
+device_id
+day
+occurred_at
+source_app
+pipeline_version
+status
+daily_signal_score_id
+created_at
+updated_at
+```
+
+### `next_integration_mappings`
+
+Maps internal UUIDs back to Firebase identifiers for outbound alert callbacks.
+
+Expected fields:
+
+```text
+child_user_id
+device_id
+uid
+external_device_id
+created_at
+updated_at
+```
+
 Do not add back these removed fields:
 
 ```text
@@ -174,6 +220,8 @@ safe_mind/
     eval_ui.py
     eval_ui_react.py
     health.py
+    metrics.py
+    next_integration.py
   privacy/
     redactor.py
     models.py
@@ -184,7 +232,11 @@ safe_mind/
     service.py
   alerts/
     engine.py
+    finalization.py
+    finalization_job.py
     models.py
+  integrations/
+    next_alerts.py
   storage/
     factory.py
     models.py
@@ -196,9 +248,35 @@ Important entry points:
 
 - Runtime ingestion: `safe_mind/pipeline.py`
 - API endpoint: `safe_mind/api/ingestion.py`
+- Firebase/Next backend integration endpoint: `safe_mind/api/next_integration.py`
 - Alert logic: `safe_mind/alerts/engine.py`
+- Closed-day alert finalization: `safe_mind/alerts/finalization.py`
+- Daily finalization job summary/callback orchestration: `safe_mind/alerts/finalization_job.py`
+- Outbound Firebase/Next alert callbacks: `safe_mind/integrations/next_alerts.py`
+- Health/readiness endpoints: `safe_mind/api/health.py`
+- In-process metrics endpoint: `safe_mind/api/metrics.py`
 - Mongo storage: `safe_mind/storage/mongo_store.py`
 - Eval dashboard: `safe_mind/api/eval_ui.py` and `safe_mind/api/eval_ui_react.py`
+
+## Health and Metrics
+
+Health endpoints:
+
+```text
+GET /health
+GET /health/live
+GET /health/ready
+```
+
+`/health/live` is a lightweight liveness check. `/health/ready` checks storage readiness and fails with `503` when storage is unavailable or production storage is misconfigured.
+
+Metrics endpoint:
+
+```text
+GET /metrics
+```
+
+The metrics registry is intentionally simple and in-process for the pilot. It tracks counters and duration summaries for HTTP requests, Next ingestion, finalization runs, and outbound callbacks. Metrics and logs must not include raw message text or redacted text.
 
 ## Internal Eval Dashboard
 
@@ -224,6 +302,18 @@ Check MongoDB connectivity:
 .\.venv\Scripts\python.exe scripts\check_mongodb_connection.py
 ```
 
+Finalize the previous closed day and optionally send outbound callbacks for push decisions:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --send-alerts
+```
+
+For manual testing of a specific closed day:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --target-day 2026-06-24
+```
+
 Seed the full synthetic message dataset through the real pipeline:
 
 ```powershell
@@ -247,7 +337,7 @@ Run tests:
 Current expected result:
 
 ```text
-27 passed
+47 passed
 ```
 
 ## Privacy Rules
@@ -279,6 +369,8 @@ Allowed storage:
 5. Each user/day has one daily metric document.
 6. The first 10 days create a fixed vector baseline.
 7. Day 11 onward is compared against that baseline.
-8. Three consecutive flagged days create an alert decision.
+8. Three consecutive finalized flagged days create an alert decision.
 9. Alert reasons are deterministic metric deltas, not model-written prose.
 10. The system does not make diagnoses and does not expose raw child text.
+11. Incoming message requests acknowledge receipt only; parent alert sending is based on closed-day finalization.
+12. In production, SQLite is rejected; `SAFE_MIND_SIGNAL_STORE_PROVIDER` must be `mongodb`.
