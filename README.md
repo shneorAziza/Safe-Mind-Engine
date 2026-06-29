@@ -2,7 +2,7 @@
 
 SafeMind is a FastAPI backend pilot for receiving child-device message events, analyzing psychological signal metrics, building a personal baseline, and finalizing parent alert decisions on closed calendar days.
 
-The current app is backend + internal evaluation tooling. It can send outbound alert callbacks to the Firebase/Next backend, which is responsible for parent push delivery.
+The current app is backend + internal evaluation tooling. It can resolve the parent's phone number from the Firebase/Next backend and send a WhatsApp template alert to the parent.
 
 ## How The System Works
 
@@ -17,7 +17,7 @@ Daily finalization, usually at 00:05:
   -> evaluate the previous calendar day
   -> compare the finalized daily average to the fixed 10-day baseline
   -> update deviation state
-  -> send outbound callback after 3 finalized flagged days in a row
+  -> send a WhatsApp alert after 3 finalized flagged days in a row
 ```
 
 Every incoming message is privacy-cleaned and analyzed. The model returns 1-10 scores for:
@@ -89,12 +89,48 @@ SAFE_MIND_PERSIST_SIGNALS=true
 SAFE_MIND_EVAL_AUTH_USERNAME=safemind
 SAFE_MIND_EVAL_AUTH_PASSWORD=<team password>
 SAFE_MIND_INTEGRATION_API_TOKEN=<shared token for Next backend calls into this service>
-SAFE_MIND_NEXT_ALERT_CALLBACK_URL=<Next backend /api/alerts URL>
-SAFE_MIND_NEXT_ALERT_CALLBACK_TOKEN=<shared token for callbacks to Next>
+SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE=<Next backend /api/internal/parent-contact/{uid} URL>
+SAFE_MIND_PARENT_CONTACT_TOKEN=<shared token for parent contact lookup>
+SAFE_MIND_WHATSAPP_ACCESS_TOKEN=<Meta WhatsApp access token>
+SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID=<Meta WhatsApp phone number id>
+SAFE_MIND_WHATSAPP_TEMPLATE_NAME=<approved WhatsApp template name>
+SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
+SAFE_MIND_WHATSAPP_GRAPH_API_VERSION=v23.0
 OPENAI_API_KEY=<your OpenAI key>
 ```
 
 SQLite still exists as a local fallback, but MongoDB is the DB used for pilot testing.
+
+### Current WhatsApp/Pilot Status
+
+As of 2026-06-30, the local WhatsApp Cloud API send path has been tested successfully with Meta. For pipeline smoke tests, `.env` is temporarily configured to use Meta's approved `hello_world` template:
+
+```env
+SAFE_MIND_WHATSAPP_TEMPLATE_NAME=hello_world
+SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=en_US
+```
+
+The real Hebrew Safe Mind template has been created in Meta and is waiting for approval:
+
+```text
+safe_mind_parent_alert / PENDING / he / UTILITY
+```
+
+After Meta approves it, switch back to:
+
+```env
+SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
+SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
+```
+
+Full automatic parent alert delivery also requires:
+
+```env
+SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE=<Next backend /api/internal/parent-contact/{uid} URL>
+SAFE_MIND_PARENT_CONTACT_TOKEN=<same secret as Next SAFE_MIND_INTERNAL_API_TOKEN>
+```
+
+See [docs/production-readiness.md](docs/production-readiness.md) for the current handoff checklist.
 
 ## Run The Server
 
@@ -213,11 +249,13 @@ Finalize a specific day:
 .\.venv\Scripts\python.exe scripts\finalize_previous_day.py --target-day 2026-07-19
 ```
 
-Finalize and send outbound alert callbacks:
+Finalize and send outbound WhatsApp alerts:
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\finalize_previous_day.py --send-alerts
 ```
+
+Important: without `--send-alerts`, finalization saves alert decisions but does not send WhatsApp messages.
 
 ## Seed Demo Data
 
@@ -255,11 +293,23 @@ Current expected result:
 47 passed
 ```
 
+## AWS Production Prep
+
+Production deployment prep lives in:
+
+- [docs/aws-production.md](docs/aws-production.md)
+- [deploy/aws/](deploy/aws/)
+
+The repo is prepared for both AWS Lambda container deployment and ECS/Fargate.
+If Lambda is required, use `Dockerfile.lambda`, `safe_mind/lambda_handler.py`,
+and `safe_mind/lambda_finalizer.py`.
+
 ## Important Docs
 
 Start here:
 
 - [docs/AI_AGENT_CONTEXT.md](docs/AI_AGENT_CONTEXT.md)
+- [docs/production-readiness.md](docs/production-readiness.md)
 
 That file is the main architecture and project-state document for a new developer or AI agent.
 

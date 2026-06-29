@@ -42,14 +42,52 @@ class Settings(BaseSettings):
     eval_auth_username: str = Field(default="safemind", alias="SAFE_MIND_EVAL_AUTH_USERNAME")
     eval_auth_password: str | None = Field(default=None, alias="SAFE_MIND_EVAL_AUTH_PASSWORD")
     integration_api_token: str | None = Field(default=None, alias="SAFE_MIND_INTEGRATION_API_TOKEN")
-    next_alert_callback_url: str | None = Field(default=None, alias="SAFE_MIND_NEXT_ALERT_CALLBACK_URL")
-    next_alert_callback_token: str | None = Field(default=None, alias="SAFE_MIND_NEXT_ALERT_CALLBACK_TOKEN")
+    parent_contact_url_template: str | None = Field(default=None, alias="SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE")
+    parent_contact_token: str | None = Field(default=None, alias="SAFE_MIND_PARENT_CONTACT_TOKEN")
+    whatsapp_access_token: str | None = Field(default=None, alias="SAFE_MIND_WHATSAPP_ACCESS_TOKEN")
+    whatsapp_phone_number_id: str | None = Field(default=None, alias="SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID")
+    whatsapp_template_name: str | None = Field(default=None, alias="SAFE_MIND_WHATSAPP_TEMPLATE_NAME")
+    whatsapp_template_language: str = Field(default="he", alias="SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE")
+    whatsapp_graph_api_version: str = Field(default="v23.0", alias="SAFE_MIND_WHATSAPP_GRAPH_API_VERSION")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",
     )
+
+    def production_config_errors(self) -> list[str]:
+        if self.env.lower() != "production":
+            return []
+
+        errors: list[str] = []
+        if self.signal_store_provider != "mongodb":
+            errors.append("SAFE_MIND_SIGNAL_STORE_PROVIDER must be mongodb in production.")
+        if not self.mongodb_uri:
+            errors.append("SAFE_MIND_MONGODB_URI is required in production.")
+        if self.psychological_analyzer_provider == "openai" and not self.openai_api_key:
+            errors.append("OPENAI_API_KEY is required when the production analyzer provider is openai.")
+        if not self.eval_auth_password:
+            errors.append("SAFE_MIND_EVAL_AUTH_PASSWORD is required in production.")
+        if not self.integration_api_token:
+            errors.append("SAFE_MIND_INTEGRATION_API_TOKEN is required in production.")
+        if not self.parent_contact_url_template:
+            errors.append("SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE is required in production.")
+        if not self.parent_contact_token:
+            errors.append("SAFE_MIND_PARENT_CONTACT_TOKEN is required in production.")
+        if not self.whatsapp_access_token:
+            errors.append("SAFE_MIND_WHATSAPP_ACCESS_TOKEN is required in production.")
+        if not self.whatsapp_phone_number_id:
+            errors.append("SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID is required in production.")
+        if not self.whatsapp_template_name:
+            errors.append("SAFE_MIND_WHATSAPP_TEMPLATE_NAME is required in production.")
+        return errors
+
+
+def validate_production_settings() -> None:
+    errors = settings.production_config_errors()
+    if errors:
+        raise RuntimeError("Invalid production configuration: " + " ".join(errors))
 
 
 @lru_cache

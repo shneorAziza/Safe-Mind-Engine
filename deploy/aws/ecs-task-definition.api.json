@@ -1,0 +1,60 @@
+{
+  "family": "safe-mind-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::<account-id>:role/safe-mind-ecs-task-execution-role",
+  "taskRoleArn": "arn:aws:iam::<account-id>:role/safe-mind-ecs-task-role",
+  "containerDefinitions": [
+    {
+      "name": "safe-mind-api",
+      "image": "<account-id>.dkr.ecr.<region>.amazonaws.com/safe-mind-api:<image-tag>",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PORT", "value": "8000" },
+        { "name": "SAFE_MIND_ENV", "value": "production" },
+        { "name": "SAFE_MIND_SIGNAL_STORE_PROVIDER", "value": "mongodb" },
+        { "name": "SAFE_MIND_MONGODB_DATABASE", "value": "safe_mind" },
+        { "name": "SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER", "value": "openai" },
+        { "name": "SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL", "value": "gpt-4o-mini" },
+        { "name": "SAFE_MIND_ENABLE_EMBEDDINGS", "value": "false" },
+        { "name": "SAFE_MIND_PERSIST_SIGNALS", "value": "true" },
+        { "name": "SAFE_MIND_EVAL_AUTH_USERNAME", "value": "safemind" }
+      ],
+      "secrets": [
+        { "name": "SAFE_MIND_MONGODB_URI", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/mongodb-uri" },
+        { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/openai-api-key" },
+        { "name": "SAFE_MIND_EVAL_AUTH_PASSWORD", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/eval-auth-password" },
+        { "name": "SAFE_MIND_INTEGRATION_API_TOKEN", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/integration-api-token" },
+        { "name": "SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/parent-contact-url-template" },
+        { "name": "SAFE_MIND_PARENT_CONTACT_TOKEN", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/parent-contact-token" },
+        { "name": "SAFE_MIND_WHATSAPP_ACCESS_TOKEN", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/whatsapp-access-token" },
+        { "name": "SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/whatsapp-phone-number-id" },
+        { "name": "SAFE_MIND_WHATSAPP_TEMPLATE_NAME", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/whatsapp-template-name" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/safe-mind-api",
+          "awslogs-region": "<region>",
+          "awslogs-stream-prefix": "api"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3).read()\""],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 20
+      }
+    }
+  ]
+}

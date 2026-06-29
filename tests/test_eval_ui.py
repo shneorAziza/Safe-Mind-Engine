@@ -12,6 +12,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _default_eval_auth_settings(monkeypatch) -> None:
     monkeypatch.setattr("safe_mind.core.config.settings.env", "local")
+    monkeypatch.setattr("safe_mind.core.config.settings.signal_store_provider", "sqlite")
     monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_username", "safemind")
     monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", None)
 
@@ -54,6 +55,18 @@ def test_eval_accepts_configured_basic_auth(monkeypatch) -> None:
 
 def test_eval_fails_closed_in_production_without_password(monkeypatch) -> None:
     monkeypatch.setattr("safe_mind.core.config.settings.env", "production")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", None)
+    client = TestClient(app)
+
+    response = client.get("/eval")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Eval auth password is not configured."
+
+
+def test_eval_fails_closed_for_mongodb_without_password(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.env", "local")
+    monkeypatch.setattr("safe_mind.core.config.settings.signal_store_provider", "mongodb")
     monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", None)
     client = TestClient(app)
 

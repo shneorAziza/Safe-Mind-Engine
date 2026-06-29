@@ -4,7 +4,8 @@ from pydantic import BaseModel, Field
 
 from safe_mind.alerts.finalization import finalize_alert_day, previous_day_for_run
 from safe_mind.core.metrics import metrics, timer
-from safe_mind.integrations.next_alerts import send_next_alert_callback
+from safe_mind.integrations.parent_contacts import fetch_parent_contact
+from safe_mind.integrations.whatsapp import send_parent_whatsapp_alert
 from safe_mind.storage.factory import SignalStore, get_signal_store
 
 
@@ -13,9 +14,9 @@ class DailyFinalizationSummary(BaseModel):
     users_checked: int = 0
     decisions_saved: int = 0
     alerts_to_send: int = 0
-    callbacks_sent: int = 0
-    callbacks_failed: int = 0
-    callbacks_skipped: int = 0
+    whatsapp_sent: int = 0
+    whatsapp_failed: int = 0
+    whatsapp_skipped: int = 0
     alert_child_user_ids: list[str] = Field(default_factory=list)
 
 
@@ -52,18 +53,26 @@ def run_daily_finalization(
                 if send_alerts:
                     mapping = active_store.get_next_integration_mapping(decision.child_user_id)
                     if mapping is None:
-                        summary.callbacks_skipped += 1
-                        metrics.increment("finalization.callbacks.skipped")
+                        summary.whatsapp_skipped += 1
+                        metrics.increment("finalization.whatsapp.skipped")
                         continue
-                    result = send_next_alert_callback(decision=decision, mapping=mapping)
+                    contact_result = fetch_parent_contact(uid=mapping.uid)
+                    if not contact_result.found or contact_result.contact is None:
+                        summary.whatsapp_skipped += 1
+                        metrics.increment("finalization.whatsapp.skipped")
+                        continue
+                    result = send_parent_whatsapp_alert(
+                        decision=decision,
+                        contact=contact_result.contact,
+                    )
                     if result.sent:
-                        summary.callbacks_sent += 1
-                        metrics.increment("finalization.callbacks.sent")
+                        summary.whatsapp_sent += 1
+                        metrics.increment("finalization.whatsapp.sent")
                     elif result.skipped:
-                        summary.callbacks_skipped += 1
-                        metrics.increment("finalization.callbacks.skipped")
+                        summary.whatsapp_skipped += 1
+                        metrics.increment("finalization.whatsapp.skipped")
                     else:
-                        summary.callbacks_failed += 1
-                        metrics.increment("finalization.callbacks.failed")
+                        summary.whatsapp_failed += 1
+                        metrics.increment("finalization.whatsapp.failed")
 
     return summary

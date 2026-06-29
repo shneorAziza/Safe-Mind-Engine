@@ -9,7 +9,7 @@ from safe_mind.api.health import router as health_router
 from safe_mind.api.ingestion import router as ingestion_router
 from safe_mind.api.metrics import router as metrics_router
 from safe_mind.api.next_integration import router as next_integration_router
-from safe_mind.core.config import settings
+from safe_mind.core.config import settings, validate_production_settings
 from safe_mind.core.metrics import metrics
 from safe_mind.storage.factory import get_signal_store
 
@@ -17,6 +17,7 @@ from safe_mind.storage.factory import get_signal_store
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     del app
+    validate_production_settings()
     get_signal_store().initialize()
     yield
 

@@ -16,10 +16,17 @@ message
 closed-day finalization
   -> baseline/deviation evaluation
   -> parent alert decision
-  -> optional outbound callback to Firebase/Next backend
+  -> optional parent phone lookup and WhatsApp template send
 ```
 
-The parent-facing app and real push delivery are handled by the Firebase/Next backend. This service can call that backend when a finalized alert should be sent.
+The Firebase/Next backend stores the parent contact data. This service can call that backend to resolve the parent phone number, then send a WhatsApp template when a finalized alert should be sent.
+
+Current handoff status, 2026-06-30:
+
+- Direct WhatsApp Cloud API sending has been tested successfully.
+- Local `.env` is temporarily pointed to the approved `hello_world` template so end-to-end smoke tests can prove the pipeline sends something.
+- The real Hebrew template `safe_mind_parent_alert` exists in Meta but is still `PENDING`.
+- Automatic parent delivery still needs `SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE` and `SAFE_MIND_PARENT_CONTACT_TOKEN` configured.
 
 ## Endpoint
 
@@ -30,6 +37,8 @@ POST /v1/integrations/next/messages
 ```
 
 This endpoint accepts Firebase `uid`, Firestore `deviceId`, and a batch of messages. It returns an acknowledgement only; alert decisions are produced later by closed-day finalization.
+
+Use this endpoint for end-to-end parent alert tests. It stores the mapping from SafeMind's internal `child_user_id` back to the Firebase `uid`, which the finalizer needs in order to fetch the parent's phone number.
 
 Internal/debug endpoint:
 
@@ -129,7 +138,7 @@ After the calendar day closes, the finalization flow evaluates the child's alert
 - daily vector from that day's compact psychological scores
 - baseline vector from the average baseline-day scores
 - per-metric deviation thresholds
-- alert gate of `3 consecutive finalized deviation days`
+- alert gate of `3 different metrics that each reached a 3-day consecutive deviation streak on the same finalized day`
 
 The output is an internal `ParentAlertDecision`.
 
@@ -149,4 +158,12 @@ The Firebase/Next integration response is acknowledgement-only and does not incl
 .\.venv\Scripts\python.exe scripts\finalize_previous_day.py --send-alerts
 ```
 
-At `00:05`, this evaluates the previous calendar day and sends callbacks only for finalized push decisions.
+At `00:05`, this evaluates the previous calendar day and sends WhatsApp alerts only for finalized parent-alert decisions.
+
+Without `--send-alerts`, the script only saves `ParentAlertDecision` records. It does not call the parent-contact endpoint and does not send WhatsApp.
+
+For a manual test of a known alert day:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\finalize_previous_day.py --target-day 2026-07-19 --send-alerts
+```

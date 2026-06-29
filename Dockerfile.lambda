@@ -1,0 +1,13 @@
+FROM public.ecr.aws/lambda/python:3.12
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+COPY pyproject.toml README.md ${LAMBDA_TASK_ROOT}/
+COPY safe_mind ${LAMBDA_TASK_ROOT}/safe_mind
+COPY scripts ${LAMBDA_TASK_ROOT}/scripts
+
+RUN python -m pip install --upgrade pip \
+    && python -m pip install ${LAMBDA_TASK_ROOT}
+
+CMD ["safe_mind.lambda_handler.handler"]

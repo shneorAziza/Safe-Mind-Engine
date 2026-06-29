@@ -9,7 +9,7 @@ Out of scope today:
 - Android collection implementation
 - child-facing product UI
 - parent-facing product UI
-- real push delivery implementation
+- parent-facing UI
 
 In scope today:
 
@@ -18,7 +18,8 @@ In scope today:
 - psychological signal extraction
 - compact signal-feature storage
 - closed-day daily alert-decision logic
-- outbound callback to the Firebase/Next backend for push decisions
+- parent phone lookup through the Firebase/Next backend
+- outbound WhatsApp template delivery for finalized parent alerts
 - MongoDB Atlas production storage
 - health/readiness checks and basic metrics
 - internal evaluation and dashboard tooling
@@ -35,7 +36,8 @@ POST /v1/integrations/next/messages
 scripts/finalize_previous_day.py --send-alerts
   -> evaluate previous closed day
   -> update finalized alert decision
-  -> callback to Firebase/Next backend when push should be sent
+  -> resolve parent phone by Firebase uid
+  -> send WhatsApp template alert to parent
 ```
 
 ## Target Product Flow
@@ -47,7 +49,7 @@ Child device
   -> Privacy-first AI pipeline
   -> Stored numeric features only
   -> Fixed baseline + closed-day deviation detection
-  -> Firebase/Next parent notification service
+  -> WhatsApp parent alert
 ```
 
 ## Key Modules
@@ -82,7 +84,8 @@ safe_mind/
     finalization.py
     finalization_job.py
   integrations/
-    next_alerts.py
+    parent_contacts.py
+    whatsapp.py
   storage/
     mongo_store.py
     vector_store.py
@@ -118,8 +121,8 @@ Current policy:
 - each day gets a metric vector from that day's compact psychological scores
 - baseline vector is the average vector during the baseline window
 - a deviation is based on per-metric thresholds from baseline
-- a push decision requires `3 consecutive finalized deviation days`
-- ingestion can update same-day averages, but push decisions are only sent after closed-day finalization
+- an alert decision requires `3 different metrics that each reached a 3-day consecutive deviation streak on the same finalized day`
+- ingestion can update same-day averages, but parent WhatsApp alerts are only sent after closed-day finalization
 
 ## Evaluation Surfaces
 

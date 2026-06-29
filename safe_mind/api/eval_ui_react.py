@@ -279,6 +279,26 @@ EVAL_HTML = """
       font-weight: 820;
       word-break: break-word;
     }
+    .metric-value .score-list { margin-top: 2px; }
+    .score-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      align-items: center;
+    }
+    .score-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8fafb;
+      padding: 2px 7px;
+      color: #102033;
+      font-size: 12px;
+      font-weight: 760;
+      white-space: nowrap;
+    }
     .panel-block {
       display: grid;
       gap: 10px;
@@ -290,20 +310,20 @@ EVAL_HTML = """
     .timeline-wrap {
       border: 1px solid var(--line);
       border-radius: 8px;
-      overflow: auto;
+      overflow: hidden;
       background: #fff;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 900px;
       font-size: 12px;
+      table-layout: fixed;
     }
     th, td {
       padding: 8px 9px;
       border-bottom: 1px solid var(--line);
       text-align: left;
-      white-space: nowrap;
+      white-space: normal;
     }
     th {
       position: sticky;
@@ -316,9 +336,55 @@ EVAL_HTML = """
       letter-spacing: 0;
     }
     tr:last-child td { border-bottom: 0; }
+    tbody tr:not(.detail-row) {
+      cursor: pointer;
+      transition: background-color 120ms ease, box-shadow 120ms ease;
+    }
+    tbody tr:not(.detail-row):hover { box-shadow: inset 3px 0 0 var(--accent); }
+    .row-selected { box-shadow: inset 3px 0 0 var(--accent); }
     .row-baseline { background: #edf6ff; }
     .row-deviation { background: #fff7ed; }
     .row-push { background: #fff0f1; }
+    .detail-row { background: #fbfcfd; }
+    .detail-cell {
+      padding: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .detail-panel {
+      background: #fbfcfd;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+    .detail-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .detail-head h3 {
+      margin: 0;
+      font-size: 15px;
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .detail-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      min-width: 0;
+    }
+    .detail-value {
+      color: #102033;
+      font-size: 13px;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
     .flow { display: grid; gap: 10px; }
     .stage-head {
       padding: 9px 11px;
@@ -391,6 +457,7 @@ EVAL_HTML = """
     @media (max-width: 720px) {
       .topbar-inner, .workspace-head { align-items: stretch; flex-direction: column; }
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .detail-grid { grid-template-columns: 1fr; }
       .split, .grid-2 { grid-template-columns: 1fr; }
       .tabs { grid-auto-flow: row; }
     }
@@ -685,7 +752,7 @@ EVAL_HTML = """
         h("div", { className: "panel-block" },
           h("div", { className: "hint" },
             h("strong", null, "What you are seeing"),
-            `Baseline period: ${baselineRangeText(data.days)}. First push in this view: ${firstPushDay ? firstPushDay.day : "none"}. A push means the 3 consecutive deviation-day gate was met.`
+            `Baseline period: ${baselineRangeText(data.days)}. First push in this view: ${firstPushDay ? firstPushDay.day : "none"}. A push means 3 metrics each reached a 3-day deviation streak.`
           ),
           h("div", { className: "metric-grid" },
             h(Metric, { label: "Baseline days", value: baselineDays }),
@@ -694,47 +761,98 @@ EVAL_HTML = """
             h(Metric, { label: "Push decisions", value: pushDays })
           ),
           h("div", { className: "metric-grid" },
-            h(Metric, { label: "Fixed baseline", value: formatScores(latestWithBaseline?.baseline_scores) }),
-            h(Metric, { label: "Latest metrics", value: formatScores(lastValue(data.days, "scores")) }),
-            h(Metric, { label: "Latest streak count", value: lastValue(data.days, "deviations_in_window") ?? "0" })
+            h(Metric, { label: "Fixed baseline", value: h(ScoreList, { scores: latestWithBaseline?.baseline_scores }) }),
+            h(Metric, { label: "Latest metrics", value: h(ScoreList, { scores: lastValue(data.days, "scores") }) }),
+            h(Metric, { label: "Latest max metric streak", value: lastValue(data.days, "deviations_in_window") ?? "0" })
           )
         ),
-        h(TimelineTable, { days: data.days })
+        h(TimelineTable, { key: `${data.child_user_id}-${data.start_day}-${data.end_day}`, days: data.days })
       );
     }
 
     function TimelineTable({ days }) {
+      const [selectedDay, setSelectedDay] = useState(days.find((day) => day.should_send_push) || days.find((day) => day.is_deviation) || days[0]);
+      const selectedKey = selectedDay ? selectedDay.day : null;
       return h("div", { className: "timeline-wrap" },
         h("table", null,
           h("thead", null,
             h("tr", null,
-              ["Day", "Phase", "Msgs", "Daily metrics", "Baseline metrics", "Deviation", "Streak", "Push", "Reason"]
+              ["Day", "Phase", "Msgs", "Deviation", "Streak", "Push"]
                 .map((head) => h("th", { key: head }, head))
             )
           ),
-          h("tbody", null, days.map((day) => h(TimelineRow, { key: day.day, day })))
+          h("tbody", null, days.flatMap((day) => {
+            const selected = day.day === selectedKey;
+            const row = h(TimelineRow, {
+              key: `${day.day}-row`,
+              day,
+              selected,
+              onSelect: () => setSelectedDay(day)
+            });
+            if (!selected) return [row];
+            return [
+              row,
+              h("tr", { key: `${day.day}-detail`, className: "detail-row" },
+                h("td", { className: "detail-cell", colSpan: 6 },
+                  h(DayDetailPanel, { day })
+                )
+              )
+            ];
+          }))
         )
       );
     }
 
-    function TimelineRow({ day }) {
-      const className = day.should_send_push
+    function TimelineRow({ day, selected, onSelect }) {
+      const toneClass = day.should_send_push
         ? "row-push"
         : day.is_deviation
           ? "row-deviation"
           : day.phase === "baseline"
             ? "row-baseline"
             : "";
-      return h("tr", { className },
+      const className = `${toneClass}${selected ? " row-selected" : ""}`.trim();
+      return h("tr", { className, onClick: onSelect, tabIndex: 0, onKeyDown: (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }},
         h("td", null, day.day),
         h("td", null, h(PhaseBadge, { phase: day.phase })),
         h("td", null, day.message_count),
-        h("td", null, formatScores(day.scores)),
-        h("td", null, formatScores(day.baseline_scores)),
         h("td", null, day.is_deviation ? h(Badge, { tone: "warn" }, "yes") : h(Badge, { tone: "ok" }, "no")),
         h("td", null, day.deviations_in_window),
-        h("td", null, day.should_send_push ? h(Badge, { tone: "alert" }, "send") : h(Badge, { tone: "ok" }, "hold")),
-        h("td", null, day.reason)
+        h("td", null, day.should_send_push ? h(Badge, { tone: "alert" }, "send") : h(Badge, { tone: "ok" }, "hold"))
+      );
+    }
+
+    function DayDetailPanel({ day }) {
+      return h("section", { className: "detail-panel" },
+        h("div", { className: "detail-head" },
+          h("h3", null, `Day detail: ${day.day}`),
+          h("div", { className: "pill-row" },
+            h(PhaseBadge, { phase: day.phase }),
+            day.is_deviation ? h(Badge, { tone: "warn" }, "deviation") : h(Badge, { tone: "ok" }, "no deviation"),
+            day.should_send_push ? h(Badge, { tone: "alert" }, "push sent") : h(Badge, { tone: "ok" }, "no push")
+          )
+        ),
+        h("div", { className: "detail-grid" },
+          h(DetailCard, { title: "Daily metrics" }, h(ScoreList, { scores: day.scores })),
+          h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
+          h(DetailCard, { title: "Decision" },
+            h("div", { className: "detail-value" }, `Messages: ${day.message_count}`),
+            h("div", { className: "detail-value" }, `Max metric streak: ${day.deviations_in_window}`),
+            h("div", { className: "detail-value" }, day.reason || "n/a")
+          )
+        )
+      );
+    }
+
+    function DetailCard({ title, children }) {
+      return h("div", { className: "detail-card" },
+        h("div", { className: "box-title" }, title),
+        children
       );
     }
 
@@ -886,6 +1004,24 @@ EVAL_HTML = """
       return h("div", { className: "metric" },
         h("div", { className: "metric-label" }, label),
         h("div", { className: "metric-value" }, value ?? "n/a")
+      );
+    }
+
+    function ScoreList({ scores }) {
+      if (!scores) return h("span", { className: "detail-value" }, "n/a");
+      const labels = {
+        positive_emotion: "pos",
+        negative_emotion: "neg",
+        loneliness: "lonely",
+        anxiety_stress: "stress",
+        hopelessness: "hope",
+        self_worth_low: "worth",
+        risk: "risk"
+      };
+      return h("div", { className: "score-list" },
+        Object.entries(labels)
+          .filter(([key]) => scores[key] !== undefined && scores[key] !== null)
+          .map(([key, label]) => h("span", { key, className: "score-chip" }, `${label}: ${Number(scores[key]).toFixed(1)}`))
       );
     }
 

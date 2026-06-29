@@ -1,0 +1,25 @@
+{
+  "FunctionName": "safe-mind-finalizer",
+  "PackageType": "Image",
+  "Code": {
+    "ImageUri": "<account-id>.dkr.ecr.<region>.amazonaws.com/safe-mind-api:<image-tag>"
+  },
+  "Role": "arn:aws:iam::<account-id>:role/safe-mind-lambda-role",
+  "Timeout": 900,
+  "MemorySize": 512,
+  "ImageConfig": {
+    "Command": ["safe_mind.lambda_finalizer.handler"]
+  },
+  "Environment": {
+    "Variables": {
+      "SAFE_MIND_ENV": "production",
+      "SAFE_MIND_SIGNAL_STORE_PROVIDER": "mongodb",
+      "SAFE_MIND_MONGODB_DATABASE": "safe_mind",
+      "SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER": "openai",
+      "SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL": "gpt-4o-mini",
+      "SAFE_MIND_ENABLE_EMBEDDINGS": "false",
+      "SAFE_MIND_PERSIST_SIGNALS": "true",
+      "SAFE_MIND_EVAL_AUTH_USERNAME": "safemind"
+    }
+  }
+}

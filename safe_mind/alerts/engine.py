@@ -165,6 +165,7 @@ def rebuild_daily_alert_state(
     baseline_ready = len(baseline_records) >= active_policy.min_baseline_days
     baseline_scores = _average_score_dict(baseline_records) if baseline_ready else None
     rebuilt: list[DailySignalRecord] = []
+    metric_streaks: dict[str, int] = {}
 
     for index, record in enumerate(ordered):
         is_baseline_day = index < active_policy.baseline_calibration_days
@@ -173,20 +174,44 @@ def rebuild_daily_alert_state(
             should_send_alert = False
             is_flagged = False
             reason = "insufficient_baseline"
+            metric_streaks = {}
         else:
-            metric_reasons = metric_deviation_reasons(
+            previous_record_day = rebuilt[-1].day if rebuilt else None
+            if previous_record_day and record.day != previous_record_day + timedelta(days=1):
+                metric_streaks = {}
+            previous_ready_metric_count = len(
+                [
+                    streak
+                    for streak in metric_streaks.values()
+                    if streak >= active_policy.required_deviation_days
+                ]
+            )
+            metric_reasons_by_key = metric_deviations(
                 daily_scores=record.scores,
                 baseline_scores=baseline_scores or {},
                 policy=active_policy,
             )
-            is_flagged = bool(metric_reasons)
-            previous = rebuilt[-(active_policy.gate_window_days - 1) :] if active_policy.gate_window_days > 1 else []
-            deviations_in_window = len([item for item in previous if item.is_flagged])
-            deviations_in_window = deviations_in_window + 1 if is_flagged else 0
+            metric_streaks = {
+                key: metric_streaks.get(key, 0) + 1
+                for key in metric_reasons_by_key
+            }
+            alert_metric_keys = [
+                key
+                for key, streak in metric_streaks.items()
+                if streak >= active_policy.required_deviation_days
+            ]
+            is_flagged = bool(metric_reasons_by_key)
+            deviations_in_window = max(metric_streaks.values(), default=0)
             should_send_alert = (
-                is_flagged and deviations_in_window == active_policy.required_deviation_days
+                len(alert_metric_keys) >= active_policy.required_deviating_metrics
+                and previous_ready_metric_count < active_policy.required_deviating_metrics
             )
-            reason = "; ".join(metric_reasons) if is_flagged else "below_gate"
+            reason_keys = alert_metric_keys if should_send_alert else list(metric_reasons_by_key)
+            reason = (
+                "; ".join(metric_reasons_by_key[key] for key in reason_keys)
+                if is_flagged
+                else "below_gate"
+            )
 
         rebuilt.append(
             record.model_copy(
@@ -210,7 +235,23 @@ def metric_deviation_reasons(
     baseline_scores: dict[str, float],
     policy: AlertPolicy,
 ) -> list[str]:
-    reasons: list[str] = []
+    reasons = list(
+        metric_deviations(
+            daily_scores=daily_scores,
+            baseline_scores=baseline_scores,
+            policy=policy,
+        ).values()
+    )
+    return reasons if len(reasons) >= policy.required_deviating_metrics else []
+
+
+def metric_deviations(
+    *,
+    daily_scores: dict[str, float],
+    baseline_scores: dict[str, float],
+    policy: AlertPolicy,
+) -> dict[str, str]:
+    reasons: dict[str, str] = {}
     for key in DISTRESS_KEYS:
         delta = daily_scores.get(key, 1.0) - baseline_scores.get(key, 1.0)
         threshold = (
@@ -219,19 +260,16 @@ def metric_deviation_reasons(
             else policy.metric_deviation_threshold
         )
         if delta >= threshold:
-            reasons.append(_format_metric_delta(key, delta))
+            reasons[key] = _format_metric_delta(key, delta)
 
     positive_delta = baseline_scores.get("positive_emotion", 5.0) - daily_scores.get(
         "positive_emotion",
         5.0,
     )
     if positive_delta >= policy.positive_emotion_drop_threshold:
-        reasons.append(_format_metric_delta("positive_emotion", -positive_delta))
+        reasons["positive_emotion"] = _format_metric_delta("positive_emotion", -positive_delta)
 
-    risk_delta = daily_scores.get("risk", 1.0) - baseline_scores.get("risk", 1.0)
-    if risk_delta >= policy.risk_deviation_threshold:
-        return reasons
-    return reasons if len(reasons) >= policy.required_deviating_metrics else []
+    return reasons
 
 
 def _format_metric_delta(key: str, delta: float) -> str:

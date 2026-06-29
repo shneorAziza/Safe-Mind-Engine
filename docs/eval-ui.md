@@ -41,7 +41,7 @@ The alert dashboard section lets us:
 - select a child user from the local DB
 - inspect a 30-day window
 - view fixed baseline days
-- see daily signal score, baseline score, delta, deviation status, consecutive deviation count, push decision, and reason
+- see daily signal score, baseline score, delta, deviation status, consecutive deviation count, parent-alert decision, and reason
 
 ## Defaults
 
@@ -107,7 +107,7 @@ The current OpenAI-backed seeded user for dashboard inspection is:
 55555555-6666-4777-8888-999999999999
 ```
 
-This user was generated from 30 synthetic messages that passed through the configured pipeline providers and currently produces push decisions on:
+This user was generated from 30 synthetic messages that passed through the configured pipeline providers and currently produces parent-alert decisions on:
 
 - `2026-07-19`
 - `2026-07-25`

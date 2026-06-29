@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.embeddings.models import EmbeddingResult
-from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping, UserBaseline
+from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping
 
 
 class SignalVectorRecord(BaseModel):

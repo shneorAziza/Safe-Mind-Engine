@@ -23,7 +23,7 @@ security = HTTPBasic(auto_error=False)
 def require_eval_auth(credentials: HTTPBasicCredentials | None = Depends(security)) -> None:
     password = settings.eval_auth_password
     if not password:
-        if settings.env.lower() == "production":
+        if _eval_auth_password_required():
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Eval auth password is not configured.",
@@ -37,6 +37,10 @@ def require_eval_auth(credentials: HTTPBasicCredentials | None = Depends(securit
     password_ok = secrets.compare_digest(credentials.password, password)
     if not username_ok or not password_ok:
         raise _auth_error()
+
+
+def _eval_auth_password_required() -> bool:
+    return settings.env.lower() == "production" or settings.signal_store_provider == "mongodb"
 
 
 def _auth_error() -> HTTPException:
@@ -688,7 +692,7 @@ EVAL_HTML = """
         <div class="dashboard-head">
           <div>
             <h2>Alert Dashboard</h2>
-            <div class="sub">A month-level view of the fixed baseline, daily drift, 3-of-5 gate, and push decisions.</div>
+            <div class="sub">A month-level view of the fixed baseline, per-metric drift streaks, and parent-alert decisions.</div>
           </div>
           <span id="dashboardRange" class="pill">No user loaded</span>
         </div>
@@ -786,7 +790,7 @@ EVAL_HTML = """
       dashboardEl.innerHTML = `
         <div class="guide">
           <strong>What you are seeing</strong>
-          Baseline period: ${escapeHtml(baselineRange)}. First push in this view: ${escapeHtml(firstPushDay ? firstPushDay.day : "none")}. A push means the 3-of-5 deviation gate was met.
+          Baseline period: ${escapeHtml(baselineRange)}. First push in this view: ${escapeHtml(firstPushDay ? firstPushDay.day : "none")}. A push means 3 metrics each reached a 3-day deviation streak.
         </div>
         <div class="metric-grid">
           ${metric("Baseline days in view", baselineDays)}
@@ -797,7 +801,7 @@ EVAL_HTML = """
         <div class="metric-grid">
           ${metric("Fixed baseline", formatScores(latestWithBaseline?.baseline_scores))}
           ${metric("Latest metrics", formatScores(lastValue(data.days, "scores")))}
-          ${metric("Latest 3/5 count", lastValue(data.days, "deviations_in_window") ?? "0")}
+          ${metric("Latest max metric streak", lastValue(data.days, "deviations_in_window") ?? "0")}
         </div>
         <div class="timeline-table-wrap">
           <table>

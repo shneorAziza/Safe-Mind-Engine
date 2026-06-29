@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument(
         "--send-alerts",
         action="store_true",
-        help="Send outbound alert callbacks for finalized push decisions.",
+        help="Send outbound WhatsApp alerts for finalized parent-alert decisions.",
     )
     args = parser.parse_args()
 

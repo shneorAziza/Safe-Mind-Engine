@@ -24,7 +24,7 @@ class AlertPolicy(BaseModel):
     deviation_threshold: float = Field(default=0.2, ge=0, le=1)
     metric_deviation_threshold: float = Field(default=2.0, ge=0, le=10)
     positive_emotion_drop_threshold: float = Field(default=2.0, ge=0, le=10)
-    required_deviating_metrics: int = Field(default=2, ge=1)
+    required_deviating_metrics: int = Field(default=3, ge=1)
     risk_deviation_threshold: float = Field(default=2.0, ge=0, le=10)
     cooldown_days: int = Field(default=5, ge=0)
 

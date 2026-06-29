@@ -93,7 +93,7 @@ def test_run_daily_finalization_returns_job_summary(tmp_path) -> None:
     assert summary.alert_child_user_ids == [str(child_user_id)]
 
 
-def test_run_daily_finalization_sends_callback_for_push_decision(monkeypatch, tmp_path) -> None:
+def test_run_daily_finalization_sends_whatsapp_for_push_decision(monkeypatch, tmp_path) -> None:
     store = SQLiteVectorStore(tmp_path / "signals.sqlite3")
     store.initialize()
     child_user_id = uuid4()
@@ -101,8 +101,15 @@ def test_run_daily_finalization_sends_callback_for_push_decision(monkeypatch, tm
     start = datetime(2026, 6, 1, 12, tzinfo=UTC)
     sent = []
 
-    def fake_send_next_alert_callback(*, decision, mapping):
-        sent.append((decision, mapping))
+    def fake_fetch_parent_contact(*, uid):
+        class Result:
+            found = True
+            contact = type("Contact", (), {"uid": uid, "parent_phone": "+972501234567"})()
+
+        return Result()
+
+    def fake_send_parent_whatsapp_alert(*, decision, contact):
+        sent.append((decision, contact))
 
         class Result:
             sent = True
@@ -111,8 +118,12 @@ def test_run_daily_finalization_sends_callback_for_push_decision(monkeypatch, tm
         return Result()
 
     monkeypatch.setattr(
-        "safe_mind.alerts.finalization_job.send_next_alert_callback",
-        fake_send_next_alert_callback,
+        "safe_mind.alerts.finalization_job.fetch_parent_contact",
+        fake_fetch_parent_contact,
+    )
+    monkeypatch.setattr(
+        "safe_mind.alerts.finalization_job.send_parent_whatsapp_alert",
+        fake_send_parent_whatsapp_alert,
     )
     store.save_next_integration_mapping(
         child_user_id=child_user_id,
@@ -149,12 +160,12 @@ def test_run_daily_finalization_sends_callback_for_push_decision(monkeypatch, tm
     )
 
     assert summary.alerts_to_send == 1
-    assert summary.callbacks_sent == 1
-    assert summary.callbacks_failed == 0
-    assert summary.callbacks_skipped == 0
+    assert summary.whatsapp_sent == 1
+    assert summary.whatsapp_failed == 0
+    assert summary.whatsapp_skipped == 0
     assert len(sent) == 1
     assert sent[0][1].uid == "firebase-user-id"
-    assert sent[0][1].external_device_id == "firestore-device-id"
+    assert sent[0][1].parent_phone == "+972501234567"
 
 
 def _features(

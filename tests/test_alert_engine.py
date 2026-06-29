@@ -46,6 +46,56 @@ def test_rebuild_daily_alert_state_flags_three_consecutive_deviation_days() -> N
     assert "בדידות +8 מהרגיל" in rebuilt[12].alert_reason
 
 
+def test_rebuild_daily_alert_state_requires_same_three_metrics_to_streak() -> None:
+    start = datetime(2026, 6, 1, 9, tzinfo=UTC)
+    records = [
+        *[_record(start + timedelta(days=offset), negative_emotion=2) for offset in range(10)],
+        _record(start + timedelta(days=10), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=11), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=12), negative_emotion=9, loneliness=1, anxiety_stress=9, hopelessness=9),
+    ]
+
+    rebuilt, _, _ = rebuild_daily_alert_state(records)
+
+    assert rebuilt[10].should_send_alert is False
+    assert rebuilt[11].should_send_alert is False
+    assert rebuilt[12].should_send_alert is False
+    assert rebuilt[12].deviations_in_window == 3
+
+
+def test_rebuild_daily_alert_state_resets_metric_streaks_on_calendar_gaps() -> None:
+    start = datetime(2026, 6, 1, 9, tzinfo=UTC)
+    records = [
+        *[_record(start + timedelta(days=offset), negative_emotion=2) for offset in range(10)],
+        _record(start + timedelta(days=10), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=12), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=13), negative_emotion=9, loneliness=9, anxiety_stress=9),
+    ]
+
+    rebuilt, _, _ = rebuild_daily_alert_state(records)
+
+    assert rebuilt[10].deviations_in_window == 1
+    assert rebuilt[11].deviations_in_window == 1
+    assert rebuilt[12].deviations_in_window == 2
+    assert rebuilt[12].should_send_alert is False
+
+
+def test_rebuild_daily_alert_state_does_not_repeat_alert_while_gate_remains_met() -> None:
+    start = datetime(2026, 6, 1, 9, tzinfo=UTC)
+    records = [
+        *[_record(start + timedelta(days=offset), negative_emotion=2) for offset in range(10)],
+        _record(start + timedelta(days=10), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=11), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=12), negative_emotion=9, loneliness=9, anxiety_stress=9),
+        _record(start + timedelta(days=13), negative_emotion=9, loneliness=9, anxiety_stress=9, hopelessness=9),
+    ]
+
+    rebuilt, _, _ = rebuild_daily_alert_state(records)
+
+    assert rebuilt[12].should_send_alert is True
+    assert rebuilt[13].should_send_alert is False
+
+
 def test_rebuild_daily_alert_state_waits_for_ten_baseline_days() -> None:
     start = datetime(2026, 6, 1, 9, tzinfo=UTC)
     records = [
@@ -67,6 +117,7 @@ def _record(
     negative_emotion: int,
     loneliness: int = 1,
     anxiety_stress: int = 1,
+    hopelessness: int = 1,
     message_count: int = 1,
 ) -> DailySignalRecord:
     scores = {
@@ -74,7 +125,7 @@ def _record(
         "negative_emotion": float(negative_emotion),
         "loneliness": float(loneliness),
         "anxiety_stress": float(anxiety_stress),
-        "hopelessness": 1.0,
+        "hopelessness": float(hopelessness),
         "self_worth_low": 1.0,
         "risk": 1.0,
     }
