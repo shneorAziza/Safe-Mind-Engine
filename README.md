@@ -103,24 +103,17 @@ SQLite still exists as a local fallback, but MongoDB is the DB used for pilot te
 
 ### Current WhatsApp/Pilot Status
 
-As of 2026-06-30, the local WhatsApp Cloud API send path has been tested successfully with Meta. For pipeline smoke tests, `.env` is temporarily configured to use Meta's approved `hello_world` template:
-
-```env
-SAFE_MIND_WHATSAPP_TEMPLATE_NAME=hello_world
-SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=en_US
-```
-
-The real Hebrew Safe Mind template has been created in Meta and is waiting for approval:
-
-```text
-safe_mind_parent_alert / PENDING / he / UTILITY
-```
-
-After Meta approves it, switch back to:
+As of 2026-06-30, the local WhatsApp Cloud API send path has been tested successfully with Meta. The approved Safe Mind Hebrew template is configured and has also been tested with a real WhatsApp send:
 
 ```env
 SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
 SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
+```
+
+Meta currently reports:
+
+```text
+safe_mind_parent_alert / APPROVED / he / MARKETING
 ```
 
 Full automatic parent alert delivery also requires:
@@ -227,13 +220,79 @@ Example body:
 
 Use it to:
 
-- run messages through the live pipeline,
-- persist synthetic messages,
+- run large historical message datasets through the live pipeline,
+- persist synthetic users into the configured signal store,
 - list known users,
 - inspect alert timelines,
 - verify baseline days, flagged days, alert days, and reasons.
 
 This dashboard is internal only. When `SAFE_MIND_EVAL_AUTH_PASSWORD` is configured, it requires HTTP Basic Auth. In production, missing Eval auth configuration fails closed.
+
+Before using Eval with the production-equivalent MongoDB path, verify the configured store works:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\check_mongodb_connection.py
+```
+
+Open the UI:
+
+```text
+http://127.0.0.1:8000/eval
+```
+
+### Large Dataset Evaluation
+
+Use the **Dataset Simulation** panel for team evaluation. The UI accepts CSV or JSON, creates a real synthetic child user, persists every message through the configured pipeline, finalizes every message day, and then shows the alert dashboard for that user.
+
+Recommended CSV shape:
+
+```csv
+timestamp,message
+2026-01-01 20:00,"I felt calm today and talked with friends."
+2026-01-02 20:00,"School was normal and I felt supported."
+```
+
+Required columns:
+
+- `timestamp` - ISO-like date/time, for example `2026-01-17 22:00`.
+- `message` - the message text to analyze.
+
+Optional accepted aliases:
+
+- timestamp: `timestamp`, `occurred_at`, `datetime`, or `date`
+- message: `message`, `text`, or `content`
+- optional columns: `source_app`, `locale`
+
+Eval fields:
+
+- `Format` - choose `CSV` or `JSON`.
+- `Parent phone` - phone number that should receive WhatsApp alerts, for example `+972501234567`.
+- `External user ID` - optional stable external ID. Leave empty to generate one.
+- `Historical dataset` - paste the full CSV/JSON dataset.
+- `Send WhatsApp alerts for alert days` - off means dry-run decisions only; on means the UI attempts real WhatsApp delivery for days where the engine decides `should_send_push=true`.
+
+Alert logic to remember:
+
+- The first 10 signal days are baseline calibration days.
+- A day is flagged when metric scores deviate enough from the user's own baseline.
+- A parent alert is created only when at least **3 different metrics** each have a **3-day consecutive deviation streak** on the same finalized day.
+- To intentionally trigger alerts in Eval data, repeat the same concerning dimensions for 3 consecutive days. Good target dimensions are loneliness, anxiety/stress, hopelessness, and low self-worth.
+
+Example 3-day alert-triggering pattern:
+
+```csv
+timestamp,message
+2026-01-17 22:00,"I feel extremely lonely, very anxious, hopeless, and worthless."
+2026-01-18 22:00,"The same feelings are still here: loneliness, intense anxiety, hopelessness, and low self-worth."
+2026-01-19 22:00,"For the third day I feel deeply lonely, highly anxious, hopeless, and worthless."
+```
+
+To get two alerts in one 40-day dataset, create:
+
+- calm baseline days for days 1-10,
+- a repeated 3-day concerning streak on days 17-19,
+- a calmer gap,
+- another repeated 3-day concerning streak on days 24-26.
 
 ## Daily Finalization
 

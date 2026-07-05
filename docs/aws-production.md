@@ -64,9 +64,9 @@ External services:
 - MongoDB Atlas connection string.
 - OpenAI API key.
 - Firebase/Next backend parent contact lookup URL and shared internal token.
-- Meta WhatsApp access token, phone number ID, and approved template name.
+- Meta WhatsApp access token, phone number ID, approved template name, and template language.
 
-Current pilot note, 2026-06-30: local WhatsApp sending works through Meta. Production should not rely on the temporary `hello_world` template; use `safe_mind_parent_alert` after Meta approves it, or create another approved production template.
+Current pilot note, 2026-06-30: local WhatsApp sending works through Meta. The approved template currently configured is `safe_mind_parent_alert / APPROVED / he / MARKETING`.
 
 ## Required Secrets
 

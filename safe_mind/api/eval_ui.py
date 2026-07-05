@@ -1,20 +1,28 @@
+from __future__ import annotations
+
+import csv
+import json
 import secrets
+from io import StringIO
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
+from safe_mind.alerts.finalization import finalize_alert_day
 from safe_mind.alerts.engine import build_alert_timeline
-from safe_mind.alerts.models import AlertTimelineDay
+from safe_mind.alerts.models import AlertTimelineDay, ParentAlertDecision
 from safe_mind.api.eval_ui_react import EVAL_HTML as REACT_EVAL_HTML
 from safe_mind.core.config import settings
+from safe_mind.integrations.parent_contacts import ParentContact
+from safe_mind.integrations.whatsapp import WhatsAppSendResult, send_parent_whatsapp_alert
 from safe_mind.pipeline import process_message
 from safe_mind.schemas.ingestion import IngestMessageRequest
-from safe_mind.storage.factory import get_signal_store
+from safe_mind.storage.factory import SignalStore, get_signal_store
 from safe_mind.storage.models import StoredSignal
 
 security = HTTPBasic(auto_error=False)
@@ -80,6 +88,55 @@ class EvalRunResponse(BaseModel):
     results: list[dict]
 
 
+class EvalDatasetMessage(BaseModel):
+    timestamp: datetime
+    message: str = Field(min_length=1, max_length=10000)
+    source_app: str | None = None
+    locale: str | None = None
+
+
+class EvalDatasetFinalizedDay(BaseModel):
+    day: date
+    decision: ParentAlertDecision | None = None
+    alert_delivery: Literal["not_needed", "dry_run", "sent", "skipped", "failed"] = "not_needed"
+    whatsapp_result: WhatsAppSendResult | None = None
+
+
+class EvalDatasetRunRequest(BaseModel):
+    dataset_text: str | None = Field(default=None, max_length=2_000_000)
+    dataset_format: Literal["csv", "json"] = "csv"
+    messages: list[EvalDatasetMessage] | None = None
+    child_user_id: UUID | None = None
+    uid: str | None = Field(default=None, max_length=200)
+    device_id: UUID | None = None
+    parent_phone: str | None = Field(default=None, max_length=40)
+    source_app: str = Field(default="eval-dataset", max_length=120)
+    locale: str | None = Field(default="he", max_length=16)
+    send_alerts: bool = False
+
+    @model_validator(mode="after")
+    def require_dataset(self) -> "EvalDatasetRunRequest":
+        if not self.messages and not (self.dataset_text and self.dataset_text.strip()):
+            raise ValueError("Provide dataset_text or messages.")
+        return self
+
+
+class EvalDatasetRunResponse(BaseModel):
+    count: int
+    child_user_id: UUID
+    uid: str
+    device_id: UUID
+    start_day: date
+    end_day: date
+    finalized_days: list[EvalDatasetFinalizedDay]
+    alerts_to_send: int
+    whatsapp_sent: int
+    whatsapp_skipped: int
+    whatsapp_failed: int
+    runtime: EvalRuntimeInfo
+    timeline: EvalAlertTimelineResponse
+
+
 class EvalAlertUsersResponse(BaseModel):
     users: list[UUID]
 
@@ -139,17 +196,95 @@ def run_eval(payload: EvalRunRequest) -> EvalRunResponse:
     )
 
 
-@router.get("/eval/alerts/users", response_model=EvalAlertUsersResponse)
-def list_eval_alert_users() -> EvalAlertUsersResponse:
-    store = get_signal_store()
+@router.post("/eval/datasets/run", response_model=EvalDatasetRunResponse)
+def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
+    messages = _dataset_messages(payload)
+    child_user_id = payload.child_user_id or uuid4()
+    device_id = payload.device_id or uuid4()
+    uid = payload.uid.strip() if payload.uid and payload.uid.strip() else f"eval-{child_user_id}"
+
+    store = _get_eval_signal_store()
     try:
-        store.initialize()
-        return EvalAlertUsersResponse(users=store.list_child_user_ids())
+        store.save_next_integration_mapping(
+            child_user_id=child_user_id,
+            device_id=device_id,
+            uid=uid,
+            external_device_id=str(device_id),
+        )
     except Exception as exc:
         raise HTTPException(
             status_code=503,
             detail=f"Signal store unavailable: {type(exc).__name__}: {exc}",
         ) from exc
+
+    for index, message in enumerate(messages):
+        occurred_at = _normalize_datetime(message.timestamp)
+        request = IngestMessageRequest(
+            event_id=uuid4(),
+            child_user_id=child_user_id,
+            device_id=device_id,
+            occurred_at=occurred_at,
+            source_type="manual",
+            source_app=message.source_app or payload.source_app,
+            text=message.message,
+            locale=message.locale or payload.locale,
+        )
+        try:
+            process_message(
+                request,
+                debug=False,
+                persist=True,
+                create_vector=False,
+                allow_model_fallback=False,
+                signal_store=store,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Message {index + 1} failed pipeline processing: {type(exc).__name__}: {exc}",
+            ) from exc
+
+    finalized_days = _finalize_dataset_days(
+        child_user_id=child_user_id,
+        days=sorted({_normalize_datetime(message.timestamp).date() for message in messages}),
+        parent_phone=payload.parent_phone,
+        uid=uid,
+        send_alerts=payload.send_alerts,
+        store=store,
+    )
+    start_day = min(_normalize_datetime(message.timestamp).date() for message in messages)
+    end_day = max(_normalize_datetime(message.timestamp).date() for message in messages)
+    timeline = _build_timeline_response(
+        child_user_id=child_user_id,
+        start_day=start_day,
+        days=(end_day - start_day).days + 1,
+        store=store,
+    )
+
+    return EvalDatasetRunResponse(
+        count=len(messages),
+        child_user_id=child_user_id,
+        uid=uid,
+        device_id=device_id,
+        start_day=start_day,
+        end_day=end_day,
+        finalized_days=finalized_days,
+        alerts_to_send=sum(1 for day in finalized_days if day.decision and day.decision.should_send_push),
+        whatsapp_sent=sum(1 for day in finalized_days if day.alert_delivery == "sent"),
+        whatsapp_skipped=sum(1 for day in finalized_days if day.alert_delivery == "skipped"),
+        whatsapp_failed=sum(1 for day in finalized_days if day.alert_delivery == "failed"),
+        runtime=_runtime_info(),
+        timeline=timeline,
+    )
+
+
+@router.get("/eval/alerts/users", response_model=EvalAlertUsersResponse)
+def list_eval_alert_users() -> EvalAlertUsersResponse:
+    try:
+        store = _get_eval_signal_store()
+        return EvalAlertUsersResponse(users=store.list_child_user_ids())
+    except Exception as exc:
+        _raise_store_unavailable(exc)
 
 
 @router.get("/eval/alerts/timeline", response_model=EvalAlertTimelineResponse)
@@ -158,16 +293,23 @@ def get_eval_alert_timeline(
     start_day: date | None = None,
     days: int = 30,
 ) -> EvalAlertTimelineResponse:
-    store = get_signal_store()
+    store = _get_eval_signal_store()
+    return _build_timeline_response(child_user_id=child_user_id, start_day=start_day, days=days, store=store)
+
+
+def _build_timeline_response(
+    *,
+    child_user_id: UUID,
+    start_day: date | None,
+    days: int,
+    store,
+) -> EvalAlertTimelineResponse:
     try:
         store.initialize()
         records = store.list_signal_records_for_child(child_user_id)
         previous_alert_days = store.list_parent_alert_days_for_child(child_user_id)
     except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=f"Signal store unavailable: {type(exc).__name__}: {exc}",
-        ) from exc
+        _raise_store_unavailable(exc)
     if records:
         latest_day = records[-1].day
         resolved_days = max(days, 1)
@@ -189,6 +331,159 @@ def get_eval_alert_timeline(
         end_day=end_day,
         days=timeline,
     )
+
+
+def _dataset_messages(payload: EvalDatasetRunRequest) -> list[EvalDatasetMessage]:
+    if payload.messages:
+        return sorted(payload.messages, key=lambda message: message.timestamp)
+    if not payload.dataset_text:
+        return []
+    if payload.dataset_format == "json":
+        return _parse_json_dataset(payload.dataset_text)
+    return _parse_csv_dataset(payload.dataset_text)
+
+
+def _get_eval_signal_store() -> SignalStore:
+    store = get_signal_store()
+    try:
+        store.initialize()
+        return store
+    except Exception as exc:
+        _raise_store_unavailable(exc)
+
+
+def _raise_store_unavailable(exc: Exception) -> None:
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "Signal store unavailable. Eval uses the configured production-equivalent signal store. "
+            "Fix the MongoDB connection and retry. "
+            f"Root error: {type(exc).__name__}: {exc}"
+        ),
+    ) from exc
+
+
+def _parse_csv_dataset(dataset_text: str) -> list[EvalDatasetMessage]:
+    reader = csv.DictReader(StringIO(dataset_text.strip("\ufeff \n\r\t")))
+    if not reader.fieldnames:
+        raise HTTPException(status_code=422, detail="CSV must include a header row.")
+    rows: list[EvalDatasetMessage] = []
+    for line_number, row in enumerate(reader, start=2):
+        timestamp_value = _first_value(row, "timestamp", "occurred_at", "datetime", "date")
+        message_value = _first_value(row, "message", "text", "content")
+        if not timestamp_value or not message_value:
+            raise HTTPException(
+                status_code=422,
+                detail=f"CSV line {line_number} must include timestamp and message.",
+            )
+        rows.append(
+            EvalDatasetMessage(
+                timestamp=_parse_datetime(timestamp_value, line_number=line_number),
+                message=message_value,
+                source_app=_first_value(row, "source_app", "sourceApp"),
+                locale=_first_value(row, "locale"),
+            )
+        )
+    if not rows:
+        raise HTTPException(status_code=422, detail="CSV dataset must include at least one message row.")
+    return sorted(rows, key=lambda message: message.timestamp)
+
+
+def _parse_json_dataset(dataset_text: str) -> list[EvalDatasetMessage]:
+    try:
+        payload = json.loads(dataset_text)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=422, detail=f"Invalid JSON dataset: {exc}") from exc
+    raw_messages: Any = payload.get("messages") if isinstance(payload, dict) else payload
+    if not isinstance(raw_messages, list):
+        raise HTTPException(status_code=422, detail="JSON dataset must be an array or an object with messages.")
+    messages: list[EvalDatasetMessage] = []
+    for index, raw_message in enumerate(raw_messages, start=1):
+        if not isinstance(raw_message, dict):
+            raise HTTPException(status_code=422, detail=f"JSON message {index} must be an object.")
+        timestamp_value = raw_message.get("timestamp") or raw_message.get("occurred_at") or raw_message.get("datetime")
+        message_value = raw_message.get("message") or raw_message.get("text") or raw_message.get("content")
+        if not timestamp_value or not message_value:
+            raise HTTPException(status_code=422, detail=f"JSON message {index} must include timestamp and message.")
+        messages.append(
+            EvalDatasetMessage(
+                timestamp=_parse_datetime(str(timestamp_value), line_number=index),
+                message=str(message_value),
+                source_app=raw_message.get("source_app") or raw_message.get("sourceApp"),
+                locale=raw_message.get("locale"),
+            )
+        )
+    if not messages:
+        raise HTTPException(status_code=422, detail="JSON dataset must include at least one message.")
+    return sorted(messages, key=lambda message: message.timestamp)
+
+
+def _first_value(row: dict[str, str], *keys: str) -> str | None:
+    normalized = {key.strip().lower(): value for key, value in row.items() if key is not None}
+    for key in keys:
+        value = normalized.get(key.lower())
+        if value is not None and value.strip():
+            return value.strip()
+    return None
+
+
+def _parse_datetime(value: str, *, line_number: int) -> datetime:
+    normalized = value.strip().replace("Z", "+00:00")
+    try:
+        return _normalize_datetime(datetime.fromisoformat(normalized))
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid timestamp on row {line_number}: use ISO format like 2026-01-03 09:15.",
+        ) from exc
+
+
+def _normalize_datetime(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _finalize_dataset_days(
+    *,
+    child_user_id: UUID,
+    days: list[date],
+    parent_phone: str | None,
+    uid: str,
+    send_alerts: bool,
+    store,
+) -> list[EvalDatasetFinalizedDay]:
+    finalized: list[EvalDatasetFinalizedDay] = []
+    for day in days:
+        decision = finalize_alert_day(child_user_id=child_user_id, target_day=day, store=store)
+        delivery: Literal["not_needed", "dry_run", "sent", "skipped", "failed"] = "not_needed"
+        whatsapp_result: WhatsAppSendResult | None = None
+        if decision and decision.should_send_push:
+            if not send_alerts:
+                delivery = "dry_run"
+            elif not parent_phone or not parent_phone.strip():
+                delivery = "skipped"
+                whatsapp_result = WhatsAppSendResult(sent=False, skipped=True, error="parent_phone_missing")
+            else:
+                whatsapp_result = send_parent_whatsapp_alert(
+                    decision=decision,
+                    contact=ParentContact(uid=uid, parent_phone=parent_phone.strip()),
+                )
+                if whatsapp_result.sent:
+                    delivery = "sent"
+                elif whatsapp_result.skipped:
+                    delivery = "skipped"
+                else:
+                    delivery = "failed"
+        finalized.append(
+            EvalDatasetFinalizedDay(
+                day=day,
+                decision=decision,
+                alert_delivery=delivery,
+                whatsapp_result=whatsapp_result,
+            )
+        )
+    return finalized
 
 
 def _status(stored_signal: StoredSignal) -> Literal["stored", "preview", "no_vector"]:
@@ -662,7 +957,7 @@ EVAL_HTML = """
         <div class="divider"></div>
         <div class="control-group">
           <div class="section-title">
-            <h2>Pipeline Simulation</h2>
+            <h2>Dataset Simulation</h2>
           </div>
           <div class="help">Use this to run the real pipeline on test messages and optionally persist them into the local DB.</div>
           <label for="messages">Messages</label>
@@ -674,14 +969,10 @@ EVAL_HTML = """
             One message line = next calendar day
           </label>
           <label class="check">
-            <input id="createVector" type="checkbox" checked>
-            Request embedding preview if explicitly enabled
-          </label>
-          <label class="check">
             <input id="persist" type="checkbox">
             Persist to local DB
           </label>
-          <button id="runBtn" class="secondary-btn" type="button">Run Live Pipeline</button>
+          <button id="runBtn" class="secondary-btn" type="button">Run Dataset</button>
         </div>
         <div id="error" class="error"></div>
       </div>
@@ -710,7 +1001,6 @@ EVAL_HTML = """
     const startDayInput = document.getElementById("startDay");
     const timelineDaysInput = document.getElementById("timelineDays");
     const oneMessagePerDayInput = document.getElementById("oneMessagePerDay");
-    const createVectorInput = document.getElementById("createVector");
     const persistInput = document.getElementById("persist");
     const resultsEl = document.getElementById("results");
     const summaryEl = document.getElementById("summary");
@@ -755,18 +1045,13 @@ EVAL_HTML = """
 
     function renderSummary(data) {
       const stored = data.results.filter((item) => item.stored_signal.stored).length;
-      const preview = data.results.filter((item) => item.status === "preview").length;
-      const noVector = data.results.filter((item) => item.status === "no_vector").length;
       const runtime = data.runtime || {};
       summaryEl.innerHTML = [
         ["messages", data.count],
         ["child", data.child_user_id],
         ["stored", stored],
-        ["preview", preview],
-        ["no vector", noVector],
         ["filter model", runtime.emotional_filter_model || runtime.emotional_filter_provider || "n/a"],
         ["analyzer model", runtime.psychological_analyzer_model || runtime.psychological_analyzer_provider || "n/a"],
-        ["embedding model", runtime.embedding_model || runtime.embedding_provider || "n/a"],
       ].map(([label, value]) => `<span class="pill">${label}: ${value}</span>`).join("");
     }
 
@@ -1097,7 +1382,7 @@ EVAL_HTML = """
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             messages,
-            create_vector: createVectorInput.checked,
+            create_vector: false,
             persist: persistInput.checked,
             child_user_id: childUserIdInput.value.trim() || null,
             start_day: startDayInput.value || null,
@@ -1121,7 +1406,7 @@ EVAL_HTML = """
         errorEl.textContent = error.message;
       } finally {
         runBtn.disabled = false;
-        runBtn.textContent = "Run Live Pipeline";
+        runBtn.textContent = "Run Dataset";
       }
     }
 

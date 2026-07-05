@@ -1,13 +1,12 @@
-# Internal Pipeline Eval UI
+# Internal Eval UI
 
 ## Status
 
 Implemented.
 
-The dashboard UI is rendered as a React-based single page served by the backend.
+The Eval UI is an internal React page served by the backend. It is used to run large historical message datasets through the real configured SafeMind pipeline and inspect the resulting monitoring timeline, flags, and parent-alert decisions.
 
-This is an internal testing UI, not part of the child app or parent app.
-It can be removed later when the pipeline is stable.
+This is not part of the child app or parent app.
 
 ## URL
 
@@ -17,116 +16,173 @@ Run the backend and open:
 http://127.0.0.1:8000/eval
 ```
 
-## Purpose
+When `SAFE_MIND_EVAL_AUTH_PASSWORD` is configured, the page requires HTTP Basic Auth.
 
-The UI now has two jobs:
+Before running Eval against MongoDB, verify the configured signal store:
 
-1. message-level pipeline inspection
-2. user-level alert-engine inspection
-
-The pipeline section lets us paste one or many messages and inspect the staged funnel:
-
-```text
-Raw Input
-  -> Privacy
-  -> Psychological Analyzer
-  -> Embedding + Vector/Metadata preview or storage
+```powershell
+.\.venv\Scripts\python.exe scripts\check_mongodb_connection.py
 ```
 
-Each message is processed independently.
-The display is grouped by stage, so every stage shows the messages that reached it.
+## Main Workflow
 
-The alert dashboard section lets us:
+Use **Dataset Simulation** for non-technical team evaluation.
 
-- select a child user from the local DB
-- inspect a 30-day window
-- view fixed baseline days
-- see daily signal score, baseline score, delta, deviation status, consecutive deviation count, parent-alert decision, and reason
+The user provides:
 
-## Defaults
+- a CSV or JSON dataset of historical messages,
+- an optional external user ID,
+- a parent phone number for WhatsApp alerts,
+- whether real WhatsApp alerts should be sent.
 
-By default:
+The backend then:
 
-- multiple messages are supported, one message per line
-- embedding creation is enabled
-- actual persistence is disabled
-- the UI shows what would be stored in the vector DB and metadata
-- the alert dashboard defaults to the last 30 days of the selected user
-- raw/redacted/summary text appears only in local debug output
+1. creates a real synthetic child user ID when one is not provided,
+2. stores the external user mapping,
+3. processes every message through the configured live pipeline,
+4. persists daily signal scores into the configured signal store,
+5. finalizes every day represented in the dataset,
+6. returns the full dashboard timeline and per-day alert decisions.
+
+## CSV Format
+
+Recommended CSV:
+
+```csv
+timestamp,message
+2026-01-01 20:00,"I felt calm today and talked with friends."
+2026-01-02 20:00,"School was normal and I felt supported."
+```
+
+Required columns:
+
+- `timestamp` - ISO-like date/time, for example `2026-01-17 22:00`.
+- `message` - the message text to analyze.
+
+Accepted aliases:
+
+- timestamp: `timestamp`, `occurred_at`, `datetime`, or `date`
+- message: `message`, `text`, or `content`
+
+Optional columns:
+
+- `source_app`
+- `locale`
+
+Naive timestamps are treated as UTC. Timestamps with timezone offsets are normalized to UTC.
+
+## JSON Format
+
+Eval also accepts either an array of messages or an object with a `messages` array:
+
+```json
+[
+  {
+    "timestamp": "2026-01-01 20:00",
+    "message": "I felt calm today and talked with friends."
+  }
+]
+```
+
+## Parent Phone And WhatsApp
+
+The `Parent phone` field is used only when `Send WhatsApp alerts for alert days` is enabled.
+
+- Toggle off: Eval saves and displays alert decisions as dry-run results.
+- Toggle on: Eval attempts real WhatsApp delivery for days where `should_send_push=true`.
+
+Use an international phone number format, for example:
+
+```text
++972501234567
+```
+
+If alert days appear but no WhatsApp is sent, check:
+
+- the toggle is enabled,
+- the phone number is present,
+- the WhatsApp access token is valid,
+- the template name and language match approved Meta templates.
+
+## Alert-Triggering Content
+
+The current alert engine is not triggered by one severe message alone.
+
+The engine requires:
+
+- baseline calibration from the first 10 signal days,
+- daily deviations from that personal baseline,
+- at least 3 different metrics,
+- each of those metrics must repeat as a deviation for 3 consecutive days,
+- all 3 metric streaks must be active on the same finalized day.
+
+To intentionally trigger an alert, repeat the same concerning dimensions for 3 consecutive days. Good target dimensions are:
+
+- loneliness,
+- anxiety/stress,
+- hopelessness,
+- low self-worth.
+
+Example 3-day alert-triggering pattern:
+
+```csv
+timestamp,message
+2026-01-17 22:00,"I feel extremely lonely, very anxious, hopeless, and worthless."
+2026-01-18 22:00,"The same feelings are still here: loneliness, intense anxiety, hopelessness, and low self-worth."
+2026-01-19 22:00,"For the third day I feel deeply lonely, highly anxious, hopeless, and worthless."
+```
+
+To produce two expected alert days in one 40-day dataset:
+
+- days 1-10: calm baseline,
+- days 17-19: repeated loneliness/anxiety/hopelessness/self-worth streak,
+- days 20-23: calmer gap,
+- days 24-26: repeated concerning streak again,
+- days 27-40: recovery or normal monitoring content.
+
+Expected alert decision days for that pattern:
+
+- `2026-01-19`
+- `2026-01-26`
+
+Model scoring can still move outcomes when OpenAI analysis is used. If no alert appears, inspect the dashboard's per-day metric scores and confirm the same 3 metrics are deviating for 3 consecutive days.
 
 ## API
 
-The UI calls:
+The active Dataset Simulation UI calls:
 
 ```http
-POST /eval/run
+POST /eval/datasets/run
 GET /eval/alerts/users
 GET /eval/alerts/timeline
 ```
 
-`POST /eval/run` request shape:
+`POST /eval/datasets/run` request shape:
 
 ```json
 {
-  "messages": ["message 1", "message 2"],
-  "persist": false,
-  "create_vector": true,
-  "source_app": "eval-ui",
-  "locale": "he"
+  "dataset_text": "timestamp,message\n2026-01-01 20:00,\"I felt calm today.\"",
+  "dataset_format": "csv",
+  "child_user_id": null,
+  "uid": "optional-external-user-id",
+  "parent_phone": "+972501234567",
+  "source_app": "eval-dataset",
+  "locale": "he",
+  "send_alerts": false
 }
 ```
-
-`persist=false` means:
-
-- create the embedding
-- show vector preview and metadata
-- do not write to SQLite
-
-`create_vector=false` means:
-
-- skip embedding entirely
-- useful for faster privacy/analyzer checks
-
-`GET /eval/alerts/timeline` returns the daily alert timeline for one child user.
-If `start_day` is omitted, the backend returns the last `days` window based on the latest stored signal for that user.
 
 ## Files
 
 - [safe_mind/api/eval_ui.py](../safe_mind/api/eval_ui.py)
 - [safe_mind/api/eval_ui_react.py](../safe_mind/api/eval_ui_react.py)
-- [safe_mind/main.py](../safe_mind/main.py)
 - [safe_mind/pipeline.py](../safe_mind/pipeline.py)
 - [safe_mind/alerts/engine.py](../safe_mind/alerts/engine.py)
-- [safe_mind/storage/vector_store.py](../safe_mind/storage/vector_store.py)
-
-## Standard Test User
-
-The current OpenAI-backed seeded user for dashboard inspection is:
-
-```text
-55555555-6666-4777-8888-999999999999
-```
-
-This user was generated from 30 synthetic messages that passed through the configured pipeline providers and currently produces parent-alert decisions on:
-
-- `2026-07-19`
-- `2026-07-25`
-
-Under the current engine, the dashboard values should be interpreted as vector-drift metrics:
-
-- `daily score` = cosine distance between that day's vector centroid and the fixed baseline centroid
-- `baseline` = average baseline-day distance inside the first 10 days
-- `delta` = `daily score - baseline`
+- [safe_mind/alerts/finalization.py](../safe_mind/alerts/finalization.py)
+- [safe_mind/storage/mongo_store.py](../safe_mind/storage/mongo_store.py)
 
 ## Privacy Note
 
-The eval UI intentionally displays raw text, redacted text, and temporary summaries so we can debug the pipeline.
+The Eval UI intentionally accepts raw message text for internal testing.
 
-This must remain an internal local tool.
-
-The vector store still does not store:
-
-- raw text
-- redacted text
-- `summary_for_embedding`
-- direct quotes
+It must remain an internal authenticated tool. Do not use real child messages unless the data handling and consent requirements for that environment have been approved.

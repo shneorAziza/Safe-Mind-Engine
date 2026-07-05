@@ -44,8 +44,9 @@ The outbound parent alert is a separate finalization flow: SafeMind calls the Fi
 Current handoff status, 2026-06-30:
 
 - WhatsApp Cloud API direct sending has been tested successfully.
-- Local `.env` is intentionally pointed at Meta's approved `hello_world` template for pipeline smoke tests until the Hebrew template is approved.
-- The Hebrew template `safe_mind_parent_alert` was created in Meta and is currently `PENDING`.
+- Local `.env` is pointed at the approved Hebrew template `safe_mind_parent_alert`.
+- Meta reports `safe_mind_parent_alert / APPROVED / he / MARKETING`.
+- A real WhatsApp smoke send with the approved template succeeded.
 - Full automatic parent alert delivery still needs parent contact lookup env vars configured: `SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE` and `SAFE_MIND_PARENT_CONTACT_TOKEN`.
 - Use [production-readiness.md](production-readiness.md) as the current checklist before production.
 
@@ -296,13 +297,15 @@ Run the server and open:
 http://127.0.0.1:8000/eval
 ```
 
-The dashboard lets a developer:
+The dashboard lets a developer or internal evaluator:
 
-- run messages through the live pipeline,
-- persist synthetic messages,
+- run large CSV/JSON historical message datasets through the live pipeline,
+- persist synthetic users and daily signal records into the configured signal store,
 - list known child users,
-- inspect a 30-day alert timeline,
-- verify baseline days, flagged days, alert days, and reasons.
+- inspect alert timelines,
+- verify baseline days, flagged days, alert days, reasons, and WhatsApp delivery status.
+
+Dataset Eval expects at least `timestamp,message` columns. To intentionally trigger a parent alert, the dataset must create 3 different metric deviations that repeat for 3 consecutive days. Common test dimensions are loneliness, anxiety/stress, hopelessness, and low self-worth. The `Parent phone` field is used when `Send WhatsApp alerts for alert days` is enabled.
 
 ## Useful Scripts
 

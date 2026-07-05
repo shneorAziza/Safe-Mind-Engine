@@ -130,10 +130,11 @@ The active internal evaluation surface is the visual Eval UI:
 
 - [eval-ui.md](eval-ui.md)
 
-The Eval UI now covers both:
+The Eval UI now covers:
 
-- per-message pipeline stages
-- per-user 30-day alert dashboards
+- large historical dataset simulation through the live pipeline
+- per-user alert dashboards with baseline, deviation, and parent-alert decisions
+- optional real WhatsApp delivery for finalized alert days
 
 ## Operations
 

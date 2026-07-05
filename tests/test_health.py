@@ -52,3 +52,4 @@ def test_readiness_check_fails_when_storage_ping_fails(monkeypatch) -> None:
     detail = response.json()["detail"]
     assert detail["storage"]["status"] == "error"
     assert detail["storage"]["message"] == "db unavailable"
+

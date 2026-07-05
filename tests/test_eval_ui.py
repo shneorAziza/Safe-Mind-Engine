@@ -1,8 +1,10 @@
 from fastapi.testclient import TestClient
 
 import safe_mind.api.eval_ui as eval_ui
+from safe_mind.analysis.models import PsychologicalScores, SignalFeatures
 from safe_mind.main import app
 from safe_mind.storage.models import DailySignalRecord
+from safe_mind.storage.vector_store import SQLiteVectorStore
 from uuid import UUID, uuid4
 from datetime import UTC, datetime
 
@@ -27,8 +29,10 @@ def test_eval_page_loads() -> None:
     assert "Alert Dashboard" in response.text
     assert "Known users in local DB" in response.text
     assert "Current test user is synthetic but stored in the real local DB" in response.text
-    assert "load the last 30 days" in response.text
-    assert "real configured models with no silent heuristic fallback" in response.text
+    assert "Dataset Simulation" in response.text
+    assert "CSV columns: timestamp,message" in response.text
+    assert "Internal dataset simulation for historical monitoring" in response.text
+    assert "Request embedding preview" not in response.text
 
 
 def test_eval_requires_auth_when_password_is_configured(monkeypatch) -> None:
@@ -99,6 +103,95 @@ def test_eval_run_accepts_multiple_messages_without_vector() -> None:
     assert len(body["results"]) == 2
     assert body["results"][0]["logs"][0]["stage"] == "input"
     assert body["results"][0]["status"] == "no_vector"
+
+
+def test_eval_dataset_run_persists_and_finalizes_timeline(monkeypatch, tmp_path) -> None:
+    store = SQLiteVectorStore(tmp_path / "signals.db")
+
+    def fake_process_message(request, **kwargs):
+        high_signal = "bad" in request.text.lower()
+        scores = PsychologicalScores(
+            positive_emotion=2 if high_signal else 7,
+            negative_emotion=8 if high_signal else 2,
+            loneliness=8 if high_signal else 2,
+            anxiety_stress=8 if high_signal else 2,
+            hopelessness=7 if high_signal else 2,
+            self_worth_low=7 if high_signal else 2,
+            risk=5 if high_signal else 1,
+        )
+        features = SignalFeatures(
+            should_store=True,
+            signal_strength=0.8 if high_signal else 0.2,
+            risk_level="medium" if high_signal else "low",
+            scores=scores,
+            confidence=0.9,
+            provider="heuristic",
+        )
+        store.initialize()
+        store.save_signal_features(
+            event_id=request.event_id,
+            child_user_id=request.child_user_id,
+            device_id=request.device_id,
+            occurred_at=request.occurred_at,
+            source_app=request.source_app,
+            features=features,
+            pipeline_version="test",
+        )
+
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: store)
+    monkeypatch.setattr(eval_ui, "process_message", fake_process_message)
+    client = TestClient(app)
+    dataset = "\n".join(
+        ["timestamp,message"]
+        + [f"2026-01-{day:02d} 12:00,normal day" for day in range(1, 11)]
+        + [f"2026-01-{day:02d} 12:00,bad day" for day in range(11, 14)]
+    )
+
+    response = client.post(
+        "/eval/datasets/run",
+        json={
+            "dataset_text": dataset,
+            "dataset_format": "csv",
+            "uid": "eval-team-user",
+            "parent_phone": "+972500000000",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["count"] == 13
+    assert body["uid"] == "eval-team-user"
+    assert body["start_day"] == "2026-01-01"
+    assert body["end_day"] == "2026-01-13"
+    assert len(body["finalized_days"]) == 13
+    assert body["timeline"]["child_user_id"] == body["child_user_id"]
+    assert body["timeline"]["days"][-1]["day"] == "2026-01-13"
+    assert body["alerts_to_send"] >= 1
+    assert any(day["alert_delivery"] == "dry_run" for day in body["finalized_days"])
+
+
+def test_eval_dataset_run_reports_configured_store_failure(monkeypatch) -> None:
+    class BrokenMongoStore:
+        def initialize(self) -> None:
+            raise RuntimeError("mongo unavailable")
+
+    monkeypatch.setattr("safe_mind.core.config.settings.env", "local")
+    monkeypatch.setattr("safe_mind.core.config.settings.signal_store_provider", "mongodb")
+    monkeypatch.setattr("safe_mind.core.config.settings.eval_auth_password", "secret")
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: BrokenMongoStore())
+    client = TestClient(app)
+
+    response = client.post(
+        "/eval/datasets/run",
+        auth=("safemind", "secret"),
+        json={
+            "dataset_text": "timestamp,message\n2026-01-01 12:00,normal day",
+            "dataset_format": "csv",
+        },
+    )
+
+    assert response.status_code == 503
+    assert "Fix the MongoDB connection and retry" in response.json()["detail"]
 
 
 def test_eval_alert_timeline_returns_empty_user_timeline(monkeypatch) -> None:

@@ -161,6 +161,20 @@ EVAL_HTML = """
       grid-template-columns: minmax(0, 1fr) 90px;
       gap: 8px;
     }
+    .dataset-meta-grid {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 8px;
+    }
+    .dataset-textarea {
+      min-height: 118px;
+      max-height: 26vh;
+      direction: ltr;
+      text-align: left;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.4;
+    }
     .switch-list { display: grid; gap: 6px; }
     .switch {
       display: flex;
@@ -458,7 +472,7 @@ EVAL_HTML = """
       .topbar-inner, .workspace-head { align-items: stretch; flex-direction: column; }
       .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .detail-grid { grid-template-columns: 1fr; }
-      .split, .grid-2 { grid-template-columns: 1fr; }
+      .split, .grid-2, .dataset-meta-grid { grid-template-columns: 1fr; }
       .tabs { grid-auto-flow: row; }
     }
   </style>
@@ -469,10 +483,12 @@ EVAL_HTML = """
     const h = React.createElement;
     const { useEffect, useState } = React;
     const seededSyntheticUserId = "55555555-6666-4777-8888-999999999999";
-    const sampleMessages = [
-      "I feel overwhelmed by tomorrow's exam and cannot sleep.",
-      "Can you explain quadratic equations in a simple way?",
-      "Everyone in class ignores me and I feel alone all the time."
+    const sampleDataset = [
+      "timestamp,message",
+      "2026-01-03 09:15,I barely slept last night",
+      "2026-01-03 22:40,Everything feels pointless",
+      "2026-01-04 08:10,I am going to school now",
+      "2026-01-14 21:35,I feel alone again and I cannot calm down"
     ].join("\\n");
     const stages = [
       "input",
@@ -492,10 +508,11 @@ EVAL_HTML = """
       const [childUserId, setChildUserId] = useState("");
       const [startDay, setStartDay] = useState("");
       const [timelineDays, setTimelineDays] = useState(30);
-      const [messages, setMessages] = useState(sampleMessages);
-      const [oneMessagePerDay, setOneMessagePerDay] = useState(false);
-      const [createVector, setCreateVector] = useState(false);
-      const [persist, setPersist] = useState(false);
+      const [datasetText, setDatasetText] = useState(sampleDataset);
+      const [datasetFormat, setDatasetFormat] = useState("csv");
+      const [uid, setUid] = useState("");
+      const [parentPhone, setParentPhone] = useState("");
+      const [sendAlerts, setSendAlerts] = useState(false);
       const [activeView, setActiveView] = useState("dashboard");
       const [runData, setRunData] = useState(null);
       const [timelineData, setTimelineData] = useState(null);
@@ -526,7 +543,7 @@ EVAL_HTML = """
         setError("");
         const resolvedChildUserId = String(nextChildUserId || "").trim();
         if (!resolvedChildUserId) {
-          setError("Enter a child user ID or run a persisted simulation first.");
+          setError("Enter a child user ID or run a dataset simulation first.");
           return;
         }
         setLoadingTimeline(true);
@@ -551,24 +568,23 @@ EVAL_HTML = """
 
       async function runEval() {
         setError("");
-        const lines = messages.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean);
-        if (!lines.length) {
-          setError("Add at least one message.");
+        if (!datasetText.trim()) {
+          setError("Paste a CSV or JSON dataset first.");
           return;
         }
         setLoadingRun(true);
         try {
-          const response = await fetch("/eval/run", {
+          const response = await fetch("/eval/datasets/run", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              messages: lines,
-              create_vector: createVector,
-              persist,
+              dataset_text: datasetText,
+              dataset_format: datasetFormat,
               child_user_id: childUserId.trim() || null,
-              start_day: startDay || null,
-              one_message_per_day: oneMessagePerDay,
-              source_app: "eval-ui",
+              uid: uid.trim() || null,
+              parent_phone: parentPhone.trim() || null,
+              send_alerts: sendAlerts,
+              source_app: "eval-dataset",
               locale: "he"
             })
           });
@@ -576,9 +592,11 @@ EVAL_HTML = """
           const data = await response.json();
           setRunData(data);
           setChildUserId(data.child_user_id);
-          setActiveView("pipeline");
+          setTimelineData(data.timeline);
+          setStartDay(data.start_day);
+          setTimelineDays(Math.max(1, data.timeline?.days?.length || 30));
+          setActiveView("summary");
           await loadKnownUsers(data.child_user_id);
-          if (persist) await loadTimeline(data.child_user_id);
         } catch (err) {
           setError(err.message);
         } finally {
@@ -594,7 +612,7 @@ EVAL_HTML = """
               h("div", null,
                 h("h1", null, "SafeMind Pipeline Eval"),
                 h("p", { className: "subtle" },
-                  "Internal stage-by-stage funnel. One line equals one message. Eval runs use the real configured models with no silent heuristic fallback."
+                  "Internal dataset simulation for historical monitoring, daily flags, and parent-alert decisions."
                 )
               )
             ),
@@ -611,26 +629,27 @@ EVAL_HTML = """
               timelineDays, setTimelineDays, loadingTimeline, loadTimeline
             }),
             h(PipelineControls, {
-              messages, setMessages, oneMessagePerDay, setOneMessagePerDay,
-              createVector, setCreateVector, persist, setPersist, loadingRun, runEval
+              datasetText, setDatasetText, datasetFormat, setDatasetFormat,
+              uid, setUid, parentPhone, setParentPhone, sendAlerts, setSendAlerts,
+              loadingRun, runEval
             }),
             error ? h("div", { className: "error" }, error) : null
           ),
           h("section", { className: "workspace" },
             h("div", { className: "workspace-head" },
               h("div", null,
-                h("h2", null, activeView === "dashboard" ? "Alert Dashboard" : "Pipeline Run"),
-                h("p", { className: "subtle" }, "Fixed baseline, daily drift, gate decisions, and message-level pipeline inspection.")
+                h("h2", null, activeView === "dashboard" ? "Alert Dashboard" : "Dataset Run"),
+                h("p", { className: "subtle" }, "Fixed baseline, daily drift, gate decisions, and alert delivery status.")
               ),
               h("div", { className: "tabs" },
                 h(TabButton, { active: activeView === "dashboard", onClick: () => setActiveView("dashboard") }, "Dashboard"),
-                h(TabButton, { active: activeView === "pipeline", onClick: () => setActiveView("pipeline") }, "Pipeline")
+                h(TabButton, { active: activeView === "summary", onClick: () => setActiveView("summary") }, "Run")
               )
             ),
             h("div", { className: "content" },
               activeView === "dashboard"
                 ? h(AlertDashboard, { data: timelineData })
-                : h(PipelineResults, { data: runData })
+                : h(DatasetResults, { data: runData })
             )
           )
         )
@@ -697,42 +716,64 @@ EVAL_HTML = """
       return h("div", { className: "sidebar-section" },
         h("div", { className: "section-head" },
           h("div", null,
-            h("h2", null, "Pipeline Simulation"),
-            h("p", { className: "subtle" }, "Run the real configured pipeline on local test messages.")
+            h("h2", null, "Dataset Simulation"),
+            h("p", { className: "subtle" }, "Run historical messages through the real monitoring pipeline.")
           )
         ),
-        h(Field, { label: "Messages" },
+        h("div", { className: "hint" },
+          h("strong", null, "Dataset format"),
+          "CSV columns: timestamp,message. JSON can be an array of objects with timestamp and message."
+        ),
+        h("div", { className: "dataset-meta-grid" },
+          h(Field, { label: "Format" },
+            h("select", {
+              value: props.datasetFormat,
+              onChange: (event) => props.setDatasetFormat(event.target.value)
+            },
+              h("option", { value: "csv" }, "CSV"),
+              h("option", { value: "json" }, "JSON")
+            )
+          ),
+          h(Field, { label: "Parent phone" },
+            h("input", {
+              type: "text",
+              value: props.parentPhone,
+              placeholder: "+972...",
+              onChange: (event) => props.setParentPhone(event.target.value)
+            })
+          )
+        ),
+        h(Field, { label: "External user ID" },
+          h("input", {
+            type: "text",
+            value: props.uid,
+            placeholder: "Optional; generated when empty",
+            onChange: (event) => props.setUid(event.target.value)
+          })
+        ),
+        h(Field, { label: "Historical dataset" },
           h("textarea", {
-            value: props.messages,
-            onChange: (event) => props.setMessages(event.target.value)
+            className: "dataset-textarea",
+            value: props.datasetText,
+            onChange: (event) => props.setDatasetText(event.target.value)
           })
         ),
         h("div", { className: "switch-list" },
           h(Switch, {
-            checked: props.oneMessagePerDay,
-            onChange: props.setOneMessagePerDay,
-            label: "One message line = next calendar day"
-          }),
-          h(Switch, {
-            checked: props.createVector,
-            onChange: props.setCreateVector,
-            label: "Request embedding preview if explicitly enabled"
-          }),
-          h(Switch, {
-            checked: props.persist,
-            onChange: props.setPersist,
-            label: "Persist to local DB"
+            checked: props.sendAlerts,
+            onChange: props.setSendAlerts,
+            label: "Send WhatsApp alerts for alert days"
           })
         ),
         h("button", { type: "button", disabled: props.loadingRun, onClick: props.runEval },
-          props.loadingRun ? "Running..." : "Run Live Pipeline"
+          props.loadingRun ? "Running..." : "Run Dataset"
         )
       );
     }
 
     function AlertDashboard({ data }) {
       if (!data) {
-        return h("div", { className: "empty" }, "Persist a simulation or enter a child user ID, then load the dashboard.");
+        return h("div", { className: "empty" }, "Run a dataset or enter a child user ID, then load the dashboard.");
       }
       if (!data.days || !data.days.length) {
         return h("div", { className: "empty" }, "No timeline days.");
@@ -856,25 +897,63 @@ EVAL_HTML = """
       );
     }
 
-    function PipelineResults({ data }) {
-      if (!data) return h("div", { className: "empty" }, "No run yet.");
-      const stored = data.results.filter((item) => item.stored_signal.stored).length;
-      const preview = data.results.filter((item) => item.status === "preview").length;
-      const noVector = data.results.filter((item) => item.status === "no_vector").length;
+    function DatasetResults({ data }) {
+      if (!data) return h("div", { className: "empty" }, "No dataset run yet.");
       const runtime = data.runtime || {};
+      const finalized = data.finalized_days || [];
+      const dryRunAlerts = finalized.filter((item) => item.alert_delivery === "dry_run").length;
 
       return h(React.Fragment, null,
         h("div", { className: "pill-row" },
           h(Pill, { label: `messages: ${data.count}` }),
           h(Pill, { label: `child: ${data.child_user_id}` }),
-          h(Pill, { label: `stored: ${stored}` }),
-          h(Pill, { label: `preview: ${preview}` }),
-          h(Pill, { label: `no vector: ${noVector}` }),
-          h(Pill, { label: `analyzer model: ${runtime.psychological_analyzer_model || runtime.psychological_analyzer_provider || "n/a"}` }),
-          h(Pill, { label: `embedding model: ${runtime.embedding_model || runtime.embedding_provider || "disabled"}` })
+          h(Pill, { label: `uid: ${data.uid}` }),
+          h(Pill, { label: `${data.start_day} to ${data.end_day}` }),
+          h(Pill, { label: `alert days: ${data.alerts_to_send}` }),
+          h(Pill, { label: `dry-run alerts: ${dryRunAlerts}` }),
+          h(Pill, { label: `sent: ${data.whatsapp_sent}` }),
+          h(Pill, { label: `skipped: ${data.whatsapp_skipped}` }),
+          h(Pill, { label: `failed: ${data.whatsapp_failed}` }),
+          h(Pill, { label: `analyzer model: ${runtime.psychological_analyzer_model || runtime.psychological_analyzer_provider || "n/a"}` })
         ),
-        h("div", { className: "flow" }, stages.map((stage) => h(Stage, { key: stage, stage, results: data.results })))
+        h("div", { className: "panel-block" },
+          h("div", { className: "hint" },
+            h("strong", null, "Run complete"),
+            "The dataset was persisted as a real child user, every message passed through the configured pipeline, and each message day was finalized for alert decisions."
+          ),
+          h("div", { className: "metric-grid" },
+            h(Metric, { label: "Messages processed", value: data.count }),
+            h(Metric, { label: "Days finalized", value: finalized.length }),
+            h(Metric, { label: "Alert decisions", value: data.alerts_to_send }),
+            h(Metric, { label: "WhatsApp sent", value: data.whatsapp_sent })
+          )
+        ),
+        h("div", { className: "timeline-wrap" },
+          h("table", null,
+            h("thead", null,
+              h("tr", null, ["Day", "Decision", "Messages", "Delivery", "Reason"].map((head) => h("th", { key: head }, head)))
+            ),
+            h("tbody", null, finalized.map((item) => {
+              const decision = item.decision || {};
+              return h("tr", { key: item.day },
+                h("td", null, item.day),
+                h("td", null, decision.should_send_push ? h(Badge, { tone: "alert" }, "alert") : h(Badge, { tone: "ok" }, "hold")),
+                h("td", null, decision.message_count ?? 0),
+                h("td", null, h(DeliveryBadge, { delivery: item.alert_delivery })),
+                h("td", null, decision.reason || "n/a")
+              );
+            }))
+          )
+        )
       );
+    }
+
+    function DeliveryBadge({ delivery }) {
+      if (delivery === "sent") return h(Badge, { tone: "alert" }, "sent");
+      if (delivery === "failed") return h(Badge, { tone: "alert" }, "failed");
+      if (delivery === "skipped") return h(Badge, { tone: "warn" }, "skipped");
+      if (delivery === "dry_run") return h(Badge, { tone: "warn" }, "dry run");
+      return h(Badge, { tone: "ok" }, "not needed");
     }
 
     function Stage({ stage, results }) {

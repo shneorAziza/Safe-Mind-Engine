@@ -24,8 +24,9 @@ The Firebase/Next backend stores the parent contact data. This service can call 
 Current handoff status, 2026-06-30:
 
 - Direct WhatsApp Cloud API sending has been tested successfully.
-- Local `.env` is temporarily pointed to the approved `hello_world` template so end-to-end smoke tests can prove the pipeline sends something.
-- The real Hebrew template `safe_mind_parent_alert` exists in Meta but is still `PENDING`.
+- Local `.env` is pointed to the approved Hebrew template `safe_mind_parent_alert`.
+- Meta reports `safe_mind_parent_alert / APPROVED / he / MARKETING`.
+- A real WhatsApp smoke send with this template succeeded.
 - Automatic parent delivery still needs `SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE` and `SAFE_MIND_PARENT_CONTACT_TOKEN` configured.
 
 ## Endpoint

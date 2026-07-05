@@ -11,7 +11,7 @@ from safe_mind.embeddings.models import EmbeddingResult
 from safe_mind.privacy.models import PrivacySummary
 from safe_mind.privacy.redactor import redact_text
 from safe_mind.schemas.ingestion import IngestMessageRequest
-from safe_mind.storage.factory import get_signal_store
+from safe_mind.storage.factory import SignalStore, get_signal_store
 from safe_mind.storage.models import StoredSignal
 from safe_mind.storage.vector_store import SQLiteVectorStore
 
@@ -53,6 +53,7 @@ def process_message(
     persist: bool = True,
     create_vector: bool | None = None,
     allow_model_fallback: bool = True,
+    signal_store: SignalStore | None = None,
 ) -> MessagePipelineResult:
     logs: list[PipelineLogEntry] = []
     requested_vector = persist if create_vector is None else create_vector
@@ -138,6 +139,7 @@ def process_message(
             stored_signal = _store_signal_features(
                 payload,
                 psychological_analysis.features,
+                store=signal_store,
             )
         if debug:
             logs.append(
@@ -279,10 +281,12 @@ def _store_embedding_and_evaluate_alert(
 def _store_signal_features(
     payload: IngestMessageRequest,
     features: SignalFeatures,
+    *,
+    store: SignalStore | None = None,
 ) -> StoredSignal:
-    store = get_signal_store()
-    store.initialize()
-    signal_id = store.save_signal_features(
+    active_store = store or get_signal_store()
+    active_store.initialize()
+    signal_id = active_store.save_signal_features(
         event_id=payload.event_id,
         child_user_id=payload.child_user_id,
         device_id=payload.device_id,

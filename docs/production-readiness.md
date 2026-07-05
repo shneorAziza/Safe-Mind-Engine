@@ -9,17 +9,17 @@ This file captures the current handoff state for continuing tomorrow.
 - MongoDB pilot storage is configured in local `.env`.
 - WhatsApp Cloud API credentials are configured locally.
 - The configured WhatsApp sender `phone_number_id` successfully sent a real message through Meta.
-- A temporary approved template is configured for pipeline smoke tests:
+- The approved Hebrew Safe Mind template is configured and has successfully sent a real WhatsApp smoke message:
 
 ```env
-SAFE_MIND_WHATSAPP_TEMPLATE_NAME=hello_world
-SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=en_US
+SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
+SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
 ```
 
-- The real Safe Mind Hebrew template was created in Meta:
+- Meta currently reports:
 
 ```text
-safe_mind_parent_alert / PENDING / he / UTILITY
+safe_mind_parent_alert / APPROVED / he / MARKETING
 ```
 
 Template body:
@@ -34,13 +34,6 @@ Footer:
 
 ```text
 Safe Mind
-```
-
-When Meta changes it to `APPROVED`, switch `.env` back to:
-
-```env
-SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
-SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
 ```
 
 ## What Is Not Yet Fully Connected
@@ -137,7 +130,7 @@ Create the Hebrew template again if needed:
 
 ## Before Production
 
-- Approve or replace the Hebrew WhatsApp template.
+- Decide whether the `MARKETING` category is acceptable for production cost/policy, or create a replacement `UTILITY` template.
 - Configure parent contact lookup secrets in the production environment.
 - Verify the Next/Firebase parent-contact endpoint works against real Firestore data.
 - Run one end-to-end test through `/v1/integrations/next/messages`.
