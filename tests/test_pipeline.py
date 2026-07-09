@@ -36,6 +36,8 @@ def test_pipeline_stores_signal_features_without_alert_decision(monkeypatch, tmp
 
     assert result.stored_signal.stored is True
     assert result.stored_signal.signal_id
+    assert result.stored_signal.daily_score_id
+    assert result.stored_signal.daily_score_id != result.stored_signal.signal_id
     assert result.stored_signal.vector_id is None
     assert result.stored_signal.embedding_model is None
     assert result.alert_decision is None

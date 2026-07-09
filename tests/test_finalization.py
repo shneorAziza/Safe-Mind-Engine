@@ -101,13 +101,6 @@ def test_run_daily_finalization_sends_whatsapp_for_push_decision(monkeypatch, tm
     start = datetime(2026, 6, 1, 12, tzinfo=UTC)
     sent = []
 
-    def fake_fetch_parent_contact(*, uid):
-        class Result:
-            found = True
-            contact = type("Contact", (), {"uid": uid, "parent_phone": "+972501234567"})()
-
-        return Result()
-
     def fake_send_parent_whatsapp_alert(*, decision, contact):
         sent.append((decision, contact))
 
@@ -118,18 +111,16 @@ def test_run_daily_finalization_sends_whatsapp_for_push_decision(monkeypatch, tm
         return Result()
 
     monkeypatch.setattr(
-        "safe_mind.alerts.finalization_job.fetch_parent_contact",
-        fake_fetch_parent_contact,
-    )
-    monkeypatch.setattr(
         "safe_mind.alerts.finalization_job.send_parent_whatsapp_alert",
         fake_send_parent_whatsapp_alert,
     )
-    store.save_next_integration_mapping(
+    store.upsert_app_user(
         child_user_id=child_user_id,
         device_id=device_id,
-        uid="firebase-user-id",
         external_device_id="firestore-device-id",
+        name="Parent",
+        parent_phone="+972501234567",
+        token_hash="token-hash",
     )
 
     for offset in range(10):
@@ -164,7 +155,7 @@ def test_run_daily_finalization_sends_whatsapp_for_push_decision(monkeypatch, tm
     assert summary.whatsapp_failed == 0
     assert summary.whatsapp_skipped == 0
     assert len(sent) == 1
-    assert sent[0][1].uid == "firebase-user-id"
+    assert sent[0][1].uid == str(child_user_id)
     assert sent[0][1].parent_phone == "+972501234567"
 
 

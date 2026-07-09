@@ -286,7 +286,7 @@ def _store_signal_features(
 ) -> StoredSignal:
     active_store = store or get_signal_store()
     active_store.initialize()
-    signal_id = active_store.save_signal_features(
+    stored_ids = active_store.save_signal_features(
         event_id=payload.event_id,
         child_user_id=payload.child_user_id,
         device_id=payload.device_id,
@@ -295,4 +295,8 @@ def _store_signal_features(
         features=features,
         pipeline_version=settings.pipeline_version,
     )
-    return StoredSignal(stored=True, signal_id=signal_id, daily_score_id=signal_id)
+    return StoredSignal(
+        stored=True,
+        signal_id=stored_ids.signal_id,
+        daily_score_id=stored_ids.daily_score_id,
+    )

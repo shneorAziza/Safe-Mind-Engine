@@ -13,6 +13,11 @@ class StoredSignal(BaseModel):
     embedding_dimensions: int | None = None
 
 
+class StoredSignalIds(BaseModel):
+    signal_id: str
+    daily_score_id: str
+
+
 class DailySignalRecord(BaseModel):
     id: str
     child_user_id: UUID
@@ -46,5 +51,16 @@ class NextIntegrationMapping(BaseModel):
     device_id: UUID
     uid: str
     external_device_id: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class AppUser(BaseModel):
+    child_user_id: UUID
+    device_id: UUID
+    external_device_id: str
+    name: str
+    parent_phone: str
+    token_hash: str
     created_at: datetime
     updated_at: datetime

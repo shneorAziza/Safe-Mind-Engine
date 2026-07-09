@@ -13,12 +13,14 @@ Out of scope today:
 
 In scope today:
 
+- WhatsApp-code registration/login
+- permanent app-token authentication
+- local parent phone storage
 - ingesting child-device message events
 - privacy redaction before model calls
 - psychological signal extraction
 - compact signal-feature storage
 - closed-day daily alert-decision logic
-- parent phone lookup through the Firebase/Next backend
 - outbound WhatsApp template delivery for finalized parent alerts
 - MongoDB Atlas production storage
 - health/readiness checks and basic metrics
@@ -27,7 +29,15 @@ In scope today:
 ## Current Built Flow
 
 ```text
-POST /v1/integrations/next/messages
+POST /v1/auth/start
+  -> send WhatsApp verification code
+
+POST /v1/auth/verify
+  -> create/update local app user
+  -> return permanent token
+
+POST /v1/app/messages
+  -> verify bearer token and matching deviceId
   -> privacy redaction
   -> psychological analyzer
   -> MongoDB daily signal aggregation
@@ -36,7 +46,7 @@ POST /v1/integrations/next/messages
 scripts/finalize_previous_day.py --send-alerts
   -> evaluate previous closed day
   -> update finalized alert decision
-  -> resolve parent phone by Firebase uid
+  -> resolve parent phone from local app user DB
   -> send WhatsApp template alert to parent
 ```
 
@@ -44,8 +54,8 @@ scripts/finalize_previous_day.py --send-alerts
 
 ```text
 Child device
-  -> Firebase/Next backend ingestion
-  -> SafeMind analyzer backend
+  -> frontend/backend collector
+  -> SafeMind app-authenticated ingestion
   -> Privacy-first AI pipeline
   -> Stored numeric features only
   -> Fixed baseline + closed-day deviation detection
@@ -57,6 +67,7 @@ Child device
 ```text
 safe_mind/
   api/
+    app_auth.py
     health.py
     ingestion.py
     metrics.py
@@ -85,6 +96,7 @@ safe_mind/
     finalization_job.py
   integrations/
     parent_contacts.py
+    sms_verification.py
     whatsapp.py
   storage/
     mongo_store.py

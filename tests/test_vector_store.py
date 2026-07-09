@@ -11,7 +11,7 @@ def test_sqlite_store_saves_signal_features_and_no_text_or_vector(tmp_path) -> N
     store = SQLiteVectorStore(tmp_path / "signals.sqlite3")
     store.initialize()
 
-    signal_id = store.save_signal_features(
+    stored_ids = store.save_signal_features(
         event_id=uuid4(),
         child_user_id=uuid4(),
         device_id=uuid4(),
@@ -21,7 +21,8 @@ def test_sqlite_store_saves_signal_features_and_no_text_or_vector(tmp_path) -> N
         pipeline_version="test",
     )
 
-    assert signal_id
+    assert stored_ids.signal_id
+    assert stored_ids.daily_score_id
     assert store.count() == 1
     assert store.count_vectors() == 0
     records = store.list_signal_records_for_child(next(iter(store.list_child_user_ids())))
@@ -80,7 +81,7 @@ def test_sqlite_store_ignores_duplicate_event_id(tmp_path) -> None:
     device_id = uuid4()
     occurred_at = datetime(2026, 7, 1, 9, tzinfo=UTC)
 
-    first_id = store.save_signal_features(
+    first_ids = store.save_signal_features(
         event_id=event_id,
         child_user_id=child_user_id,
         device_id=device_id,
@@ -89,7 +90,7 @@ def test_sqlite_store_ignores_duplicate_event_id(tmp_path) -> None:
         features=_features(negative_emotion=8),
         pipeline_version="test",
     )
-    duplicate_id = store.save_signal_features(
+    duplicate_ids = store.save_signal_features(
         event_id=event_id,
         child_user_id=child_user_id,
         device_id=device_id,
@@ -100,7 +101,7 @@ def test_sqlite_store_ignores_duplicate_event_id(tmp_path) -> None:
     )
 
     records = store.list_signal_records_for_child(child_user_id)
-    assert duplicate_id == first_id
+    assert duplicate_ids == first_ids
     assert len(records) == 1
     assert records[0].message_count == 1
     assert records[0].scores["negative_emotion"] == 8

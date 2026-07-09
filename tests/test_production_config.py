@@ -22,8 +22,6 @@ def test_production_config_requires_secrets() -> None:
     assert "OPENAI_API_KEY is required when the production analyzer provider is openai." in errors
     assert "SAFE_MIND_EVAL_AUTH_PASSWORD is required in production." in errors
     assert "SAFE_MIND_INTEGRATION_API_TOKEN is required in production." in errors
-    assert "SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE is required in production." in errors
-    assert "SAFE_MIND_PARENT_CONTACT_TOKEN is required in production." in errors
     assert "SAFE_MIND_WHATSAPP_ACCESS_TOKEN is required in production." in errors
     assert "SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID is required in production." in errors
     assert "SAFE_MIND_WHATSAPP_TEMPLATE_NAME is required in production." in errors
@@ -39,8 +37,6 @@ def test_complete_production_config_has_no_errors() -> None:
         OPENAI_API_KEY="sk-test",
         SAFE_MIND_EVAL_AUTH_PASSWORD="eval-secret",
         SAFE_MIND_INTEGRATION_API_TOKEN="ingest-secret",
-        SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE="https://example.com/api/internal/parent-contact/{uid}",
-        SAFE_MIND_PARENT_CONTACT_TOKEN="parent-contact-secret",
         SAFE_MIND_WHATSAPP_ACCESS_TOKEN="whatsapp-secret",
         SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID="123456789",
         SAFE_MIND_WHATSAPP_TEMPLATE_NAME="safe_mind_alert",

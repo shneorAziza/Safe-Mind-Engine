@@ -7,7 +7,7 @@ from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.core.config import settings
 from safe_mind.storage.mongo_store import MongoSignalStore
-from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping
+from safe_mind.storage.models import AppUser, DailySignalRecord, NextIntegrationMapping, StoredSignalIds
 from safe_mind.storage.vector_store import SQLiteVectorStore
 
 
@@ -26,7 +26,7 @@ class SignalStore(Protocol):
         source_app: str | None,
         features: SignalFeatures,
         pipeline_version: str,
-    ) -> str: ...
+    ) -> StoredSignalIds: ...
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]: ...
 
@@ -53,6 +53,50 @@ class SignalStore(Protocol):
         self,
         child_user_id: UUID,
     ) -> NextIntegrationMapping | None: ...
+
+    def create_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        code_hash: str,
+        expires_at: datetime,
+    ) -> None: ...
+
+    def consume_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        parent_phone: str,
+        code_hash: str,
+        now: datetime,
+    ) -> AppUser | None: ...
+
+    def upsert_app_user(
+        self,
+        *,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        token_hash: str,
+    ) -> AppUser: ...
+
+    def get_app_user_by_token_hash(self, token_hash: str) -> AppUser | None: ...
+
+    def get_app_user_by_child_user_id(self, child_user_id: UUID) -> AppUser | None: ...
+
+    def update_app_user_name(
+        self,
+        *,
+        child_user_id: UUID,
+        name: str,
+    ) -> AppUser: ...
 
     def count(self) -> int: ...
 

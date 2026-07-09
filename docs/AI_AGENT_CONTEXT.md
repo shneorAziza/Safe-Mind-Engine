@@ -6,14 +6,15 @@ Read this file before changing code. The older files in `docs/` are secondary re
 
 ## Product Goal
 
-SafeMind is a backend pilot that receives child-device text messages, removes private information, analyzes psychological signal metrics, builds a personal baseline, and raises an internal alert when the child shows a meaningful multi-day deviation from their own baseline.
+SafeMind is a backend pilot that registers parent/device clients, receives child-device text messages, removes private information, analyzes psychological signal metrics, builds a personal baseline, and raises an internal alert when the child shows a meaningful multi-day deviation from their own baseline.
 
-The current system finalizes whether a parent alert should be sent, resolves the parent's phone number from the Firebase/Next backend, and can send a WhatsApp template message to the parent.
+The current system owns WhatsApp-code login, permanent app tokens, local parent phone storage, message ingestion, alert finalization, and WhatsApp template delivery.
 
 ## Current Message Ingestion Pipeline
 
 ```text
 Incoming message
+  -> app token + device id verification
   -> privacy redaction
   -> psychological analyzer
   -> daily metric aggregation
@@ -25,13 +26,13 @@ The realtime ingestion path does not send parent alerts immediately. Parent aler
 
 ## What Happens Per Message
 
-1. `POST /v1/integrations/next/messages` receives a Firebase/Next batch, or `POST /v1/ingest/messages` receives one internal message event.
+1. `POST /v1/app/messages` receives the frontend message batch with `Authorization: Bearer <token>` and a matching `deviceId`, or `POST /v1/ingest/messages` receives one internal message event.
 2. The privacy redactor removes PII patterns before the model call.
 3. The psychological analyzer returns numeric scores from 1 to 10.
 4. The store updates exactly one daily record for the child and calendar day.
 5. The ingestion endpoint acknowledges the accepted event. Alert decisions are not part of the sender-facing response.
 
-The Firebase/Next integration endpoint also stores a mapping from internal IDs to the external Firebase `uid` and Firestore `deviceId`, so later alert finalization can look up the parent's contact data for the right child account.
+The frontend auth flow stores `app_users` records with the permanent token hash, registered external device id, internal child/device ids, display name, and parent phone number.
 
 ## Daily Alert Evaluation
 
@@ -39,15 +40,17 @@ Parent alert decisions are evaluated once the calendar day has ended.
 
 At `00:05` on a given date, the system evaluates the previous calendar day. For example, at `2026-06-25 00:05`, it evaluates the average scores for `2026-06-24`, compares that day to the child's baseline, updates the deviation/flag state, and only then decides whether a parent alert should be sent.
 
-The outbound parent alert is a separate finalization flow: SafeMind calls the Firebase/Next backend for the parent's phone number, then sends the WhatsApp template message. It is not coupled to the timing of incoming message requests.
+The outbound parent alert is a separate finalization flow: SafeMind reads the parent phone number from the local app user DB, then sends the WhatsApp template message. It is not coupled to the timing of incoming message requests.
 
-Current handoff status, 2026-06-30:
+Current handoff status, 2026-07-09:
 
 - WhatsApp Cloud API direct sending has been tested successfully.
 - Local `.env` is pointed at the approved Hebrew template `safe_mind_parent_alert`.
 - Meta reports `safe_mind_parent_alert / APPROVED / he / MARKETING`.
+- Meta reports `safe_mind_auth_code / APPROVED / he / AUTHENTICATION`.
 - A real WhatsApp smoke send with the approved template succeeded.
-- Full automatic parent alert delivery still needs parent contact lookup env vars configured: `SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE` and `SAFE_MIND_PARENT_CONTACT_TOKEN`.
+- WhatsApp verification-code sending has been tested successfully.
+- The final frontend ingestion endpoint is `POST /v1/app/messages`.
 - Use [production-readiness.md](production-readiness.md) as the current checklist before production.
 
 ## Psychological Metrics
@@ -167,9 +170,9 @@ created_at
 updated_at
 ```
 
-### `next_integration_mappings`
+### `next_integration_mappings` Legacy
 
-Maps internal UUIDs back to Firebase identifiers for parent contact lookup.
+Legacy mapping for older backend-to-backend ingestion. The current frontend flow does not depend on Firebase/Next identity or parent-contact lookup; parent phone numbers live in `app_users`.
 
 Expected fields:
 
@@ -228,6 +231,7 @@ safe_mind/
     ingestion.py
     eval_ui.py
     eval_ui_react.py
+    app_auth.py
     health.py
     metrics.py
     next_integration.py
@@ -246,6 +250,7 @@ safe_mind/
     models.py
   integrations/
     parent_contacts.py
+    sms_verification.py
     whatsapp.py
   storage/
     factory.py
@@ -257,12 +262,13 @@ safe_mind/
 Important entry points:
 
 - Runtime ingestion: `safe_mind/pipeline.py`
-- API endpoint: `safe_mind/api/ingestion.py`
-- Firebase/Next backend integration endpoint: `safe_mind/api/next_integration.py`
+- Frontend auth and app endpoints: `safe_mind/api/app_auth.py`
+- Internal ingestion endpoint: `safe_mind/api/ingestion.py`
+- Legacy backend integration endpoint: `safe_mind/api/next_integration.py`
 - Alert logic: `safe_mind/alerts/engine.py`
 - Closed-day alert finalization: `safe_mind/alerts/finalization.py`
 - Daily finalization job summary/WhatsApp orchestration: `safe_mind/alerts/finalization_job.py`
-- Parent contact lookup: `safe_mind/integrations/parent_contacts.py`
+- WhatsApp verification delivery: `safe_mind/integrations/sms_verification.py`
 - Outbound WhatsApp alerts: `safe_mind/integrations/whatsapp.py`
 - Health/readiness endpoints: `safe_mind/api/health.py`
 - In-process metrics endpoint: `safe_mind/api/metrics.py`
@@ -287,7 +293,7 @@ Metrics endpoint:
 GET /metrics
 ```
 
-The metrics registry is intentionally simple and in-process for the pilot. It tracks counters and duration summaries for HTTP requests, Next ingestion, finalization runs, parent contact lookup, and outbound WhatsApp sends. Metrics and logs must not include raw message text or redacted text.
+The metrics registry is intentionally simple and in-process for the pilot. It tracks counters and duration summaries for HTTP requests, app ingestion, finalization runs, and outbound WhatsApp sends. Metrics and logs must not include raw message text or redacted text.
 
 ## Internal Eval Dashboard
 
@@ -364,7 +370,7 @@ Run tests:
 Current expected result:
 
 ```text
-47 passed
+65 passed
 ```
 
 ## Privacy Rules
@@ -401,4 +407,4 @@ Allowed storage:
 10. The system does not make diagnoses and does not expose raw child text.
 11. Incoming message requests acknowledge receipt only; parent alert sending is based on closed-day finalization.
 12. In production, SQLite is rejected; `SAFE_MIND_SIGNAL_STORE_PROVIDER` must be `mongodb`.
-13. End-to-end parent alert tests must ingest through `/v1/integrations/next/messages`, not only `/v1/ingest/messages`, so the Firebase `uid` mapping exists for parent contact lookup.
+13. End-to-end frontend tests must register through `/v1/auth/start` and `/v1/auth/verify`, then ingest through `/v1/app/messages` with the returned token and matching `deviceId`.

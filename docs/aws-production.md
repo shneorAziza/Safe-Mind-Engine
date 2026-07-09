@@ -17,7 +17,7 @@ Internet
 EventBridge Scheduler
   -> Lambda safe-mind-finalizer
   -> safe_mind.lambda_finalizer.handler
-  -> WhatsApp alert via parent contact lookup
+  -> WhatsApp alert via local app user DB
 ```
 
 Alternative if you later want a constantly warm web service:
@@ -33,7 +33,7 @@ Internet
 EventBridge Scheduler
   -> ECS RunTask
   -> python scripts/finalize_previous_day.py --send-alerts
-  -> WhatsApp alert via parent contact lookup
+  -> WhatsApp alert via local app user DB
 ```
 
 Why Lambda can work here:
@@ -63,10 +63,9 @@ External services:
 
 - MongoDB Atlas connection string.
 - OpenAI API key.
-- Firebase/Next backend parent contact lookup URL and shared internal token.
-- Meta WhatsApp access token, phone number ID, approved template name, and template language.
+- Meta WhatsApp access token, phone number ID, approved parent-alert template, approved auth-code template, and template language.
 
-Current pilot note, 2026-06-30: local WhatsApp sending works through Meta. The approved template currently configured is `safe_mind_parent_alert / APPROVED / he / MARKETING`.
+Current pilot note, 2026-07-09: local WhatsApp sending works through Meta. The approved templates currently configured are `safe_mind_parent_alert / APPROVED / he / MARKETING` and `safe_mind_auth_code / APPROVED / he / AUTHENTICATION`.
 
 ## Required Secrets
 
@@ -77,12 +76,12 @@ safe-mind/prod/mongodb-uri
 safe-mind/prod/openai-api-key
 safe-mind/prod/eval-auth-password
 safe-mind/prod/integration-api-token
-safe-mind/prod/parent-contact-url-template
-safe-mind/prod/parent-contact-token
 safe-mind/prod/whatsapp-access-token
 safe-mind/prod/whatsapp-phone-number-id
 safe-mind/prod/whatsapp-template-name
 safe-mind/prod/whatsapp-template-language
+safe-mind/prod/whatsapp-verification-template-name
+safe-mind/prod/whatsapp-verification-template-language
 ```
 
 The ECS task definitions in `deploy/aws/` reference these names.
@@ -109,12 +108,12 @@ SAFE_MIND_MONGODB_URI
 OPENAI_API_KEY
 SAFE_MIND_EVAL_AUTH_PASSWORD
 SAFE_MIND_INTEGRATION_API_TOKEN
-SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE
-SAFE_MIND_PARENT_CONTACT_TOKEN
 SAFE_MIND_WHATSAPP_ACCESS_TOKEN
 SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID
 SAFE_MIND_WHATSAPP_TEMPLATE_NAME
 SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_LANGUAGE
 ```
 
 The app now fails closed in production if any required secret is missing.
@@ -195,8 +194,8 @@ Use these if we choose ECS/Fargate instead of Lambda:
     - `/eval` requires Basic Auth
 11. Register finalizer task definition.
 12. Create EventBridge Scheduler rule for the finalizer.
-13. Send a test ingestion request from the Firebase/Next backend.
-14. Confirm `users/{uid}` in Firestore contains a test `parentPhone`.
+13. Run a frontend-style registration/login test through `/v1/auth/start` and `/v1/auth/verify`.
+14. Send a test message batch through `/v1/app/messages` with the returned token and matching `deviceId`.
 15. Run the finalizer with `--send-alerts` and confirm it creates alert decisions and WhatsApp sends.
 
 ## Cost Controls For The First Week

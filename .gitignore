@@ -18,3 +18,12 @@ htmlcov/
 *.log
 *.out
 *.err
+uvicorn-*.log
+uvicorn-*.out
+uvicorn-*.err
+data/*.sqlite3
+data/*.sqlite
+data/*.db
+github-safemind-backend/
+*.postman_collection.json
+*.postman_environment.json

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.embeddings.models import EmbeddingResult
-from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping
+from safe_mind.storage.models import AppUser, DailySignalRecord, NextIntegrationMapping, StoredSignalIds
 
 
 class SignalVectorRecord(BaseModel):
@@ -158,6 +158,41 @@ class SQLiteVectorStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                create table if not exists app_users (
+                    child_user_id text primary key,
+                    device_id text not null,
+                    external_device_id text not null,
+                    name text not null,
+                    parent_phone text not null,
+                    token_hash text not null,
+                    created_at text not null,
+                    updated_at text not null,
+                    unique(parent_phone, external_device_id),
+                    unique(token_hash)
+                )
+                """
+            )
+            connection.execute(
+                "create index if not exists idx_app_users_token_hash on app_users(token_hash)"
+            )
+            connection.execute(
+                """
+                create table if not exists app_login_challenges (
+                    id text primary key,
+                    child_user_id text not null,
+                    device_id text not null,
+                    external_device_id text not null,
+                    name text not null,
+                    parent_phone text not null,
+                    code_hash text not null,
+                    expires_at text not null,
+                    consumed_at text,
+                    created_at text not null
+                )
+                """
+            )
 
     def ping(self) -> None:
         with self._connect() as connection:
@@ -174,7 +209,7 @@ class SQLiteVectorStore:
         embedding: EmbeddingResult,
         features: SignalFeatures,
         pipeline_version: str,
-    ) -> str:
+    ) -> StoredSignalIds:
         vector_id = str(uuid4())
         with self._connect() as connection:
             connection.execute(
@@ -263,7 +298,18 @@ class SQLiteVectorStore:
                     (str(event_id),),
                 ).fetchone()
                 if row:
-                    return str(row[0])
+                    daily_row = connection.execute(
+                        """
+                        select id from daily_signal_scores
+                        where child_user_id = ? and day = ?
+                        """,
+                        (str(child_user_id), day.isoformat()),
+                    ).fetchone()
+                    if not daily_row:
+                        raise RuntimeError(
+                            "Duplicate signal feature record did not include a daily score."
+                        )
+                    return StoredSignalIds(signal_id=str(row[0]), daily_score_id=str(daily_row[0]))
                 raise
 
             row = connection.execute(
@@ -320,7 +366,7 @@ class SQLiteVectorStore:
                     now.isoformat(),
                 ),
             )
-        return signal_id
+        return StoredSignalIds(signal_id=signal_id, daily_score_id=daily_id)
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
         with self._connect() as connection:
@@ -557,6 +603,165 @@ class SQLiteVectorStore:
             updated_at=datetime.fromisoformat(row[5]),
         )
 
+    def create_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        code_hash: str,
+        expires_at: datetime,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                insert into app_login_challenges (
+                    id, child_user_id, device_id, external_device_id, name,
+                    parent_phone, code_hash, expires_at, created_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    challenge_id,
+                    str(child_user_id),
+                    str(device_id),
+                    external_device_id,
+                    name,
+                    parent_phone,
+                    code_hash,
+                    expires_at.isoformat(),
+                    now,
+                ),
+            )
+
+    def consume_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        parent_phone: str,
+        code_hash: str,
+        now: datetime,
+    ) -> AppUser | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select child_user_id, device_id, external_device_id, name, parent_phone
+                from app_login_challenges
+                where id = ? and parent_phone = ? and code_hash = ?
+                    and consumed_at is null and expires_at > ?
+                """,
+                (challenge_id, parent_phone, code_hash, now.isoformat()),
+            ).fetchone()
+            if not row:
+                return None
+            connection.execute(
+                "update app_login_challenges set consumed_at = ? where id = ?",
+                (now.isoformat(), challenge_id),
+            )
+
+        return AppUser(
+            child_user_id=UUID(row[0]),
+            device_id=UUID(row[1]),
+            external_device_id=row[2],
+            name=row[3],
+            parent_phone=row[4],
+            token_hash="",
+            created_at=now,
+            updated_at=now,
+        )
+
+    def upsert_app_user(
+        self,
+        *,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        token_hash: str,
+    ) -> AppUser:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            row = connection.execute(
+                "select created_at from app_users where child_user_id = ?",
+                (str(child_user_id),),
+            ).fetchone()
+            created_at = row[0] if row else now
+            connection.execute(
+                """
+                insert into app_users (
+                    child_user_id, device_id, external_device_id, name,
+                    parent_phone, token_hash, created_at, updated_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict(child_user_id) do update set
+                    device_id = excluded.device_id,
+                    external_device_id = excluded.external_device_id,
+                    name = excluded.name,
+                    parent_phone = excluded.parent_phone,
+                    token_hash = excluded.token_hash,
+                    updated_at = excluded.updated_at
+                """,
+                (
+                    str(child_user_id),
+                    str(device_id),
+                    external_device_id,
+                    name,
+                    parent_phone,
+                    token_hash,
+                    created_at,
+                    now,
+                ),
+            )
+        return self.get_app_user_by_child_user_id(child_user_id)  # type: ignore[return-value]
+
+    def get_app_user_by_token_hash(self, token_hash: str) -> AppUser | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select child_user_id, device_id, external_device_id, name,
+                    parent_phone, token_hash, created_at, updated_at
+                from app_users
+                where token_hash = ?
+                """,
+                (token_hash,),
+            ).fetchone()
+        return _app_user_from_row(row)
+
+    def get_app_user_by_child_user_id(self, child_user_id: UUID) -> AppUser | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select child_user_id, device_id, external_device_id, name,
+                    parent_phone, token_hash, created_at, updated_at
+                from app_users
+                where child_user_id = ?
+                """,
+                (str(child_user_id),),
+            ).fetchone()
+        return _app_user_from_row(row)
+
+    def update_app_user_name(
+        self,
+        *,
+        child_user_id: UUID,
+        name: str,
+    ) -> AppUser:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                "update app_users set name = ?, updated_at = ? where child_user_id = ?",
+                (name, now, str(child_user_id)),
+            )
+        user = self.get_app_user_by_child_user_id(child_user_id)
+        if user is None:
+            raise RuntimeError("App user was not found.")
+        return user
+
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
@@ -606,6 +811,7 @@ class SQLiteVectorStore:
                         now,
                     ),
                 )
+
             for record in records:
                 connection.execute(
                     """
@@ -627,3 +833,18 @@ class SQLiteVectorStore:
                         record.id,
                     ),
                 )
+
+
+def _app_user_from_row(row: tuple | None) -> AppUser | None:
+    if not row:
+        return None
+    return AppUser(
+        child_user_id=UUID(row[0]),
+        device_id=UUID(row[1]),
+        external_device_id=row[2],
+        name=row[3],
+        parent_phone=row[4],
+        token_hash=row[5],
+        created_at=datetime.fromisoformat(row[6]),
+        updated_at=datetime.fromisoformat(row[7]),
+    )

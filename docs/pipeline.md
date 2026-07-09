@@ -6,6 +6,7 @@ The backend supports message ingestion, privacy-first psychological scoring, dai
 
 ```text
 message
+  -> app token + device id verification
   -> privacy redaction
   -> psychological signal analysis
   -> compact JSON signal scores
@@ -16,30 +17,49 @@ message
 closed-day finalization
   -> baseline/deviation evaluation
   -> parent alert decision
-  -> optional parent phone lookup and WhatsApp template send
+  -> parent phone lookup from local app user DB
+  -> optional WhatsApp template send
 ```
 
-The Firebase/Next backend stores the parent contact data. This service can call that backend to resolve the parent phone number, then send a WhatsApp template when a finalized alert should be sent.
+SafeMind stores the parent phone number locally during WhatsApp-code registration/login. A second backend may still collect messages from devices, but the product auth, parent phone DB, analysis, and alert delivery live here.
 
-Current handoff status, 2026-06-30:
+Current handoff status, 2026-07-09:
 
 - Direct WhatsApp Cloud API sending has been tested successfully.
 - Local `.env` is pointed to the approved Hebrew template `safe_mind_parent_alert`.
 - Meta reports `safe_mind_parent_alert / APPROVED / he / MARKETING`.
+- Meta reports `safe_mind_auth_code / APPROVED / he / AUTHENTICATION`.
 - A real WhatsApp smoke send with this template succeeded.
-- Automatic parent delivery still needs `SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE` and `SAFE_MIND_PARENT_CONTACT_TOKEN` configured.
+- WhatsApp verification-code sending has been tested successfully.
 
 ## Endpoint
 
 Preferred product integration:
 
 ```http
-POST /v1/integrations/next/messages
+POST /v1/app/messages
 ```
 
-This endpoint accepts Firebase `uid`, Firestore `deviceId`, and a batch of messages. It returns an acknowledgement only; alert decisions are produced later by closed-day finalization.
+This endpoint accepts the permanent app token, the registered client `deviceId`, and a batch of messages. It returns an acknowledgement only; alert decisions are produced later by closed-day finalization.
 
-Use this endpoint for end-to-end parent alert tests. It stores the mapping from SafeMind's internal `child_user_id` back to the Firebase `uid`, which the finalizer needs in order to fetch the parent's phone number.
+Use this endpoint for frontend and end-to-end parent alert tests.
+
+```http
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "deviceId": "device-unique-id-from-client",
+  "messages": [
+    {
+      "text": "I feel overwhelmed and cannot sleep before tomorrow's exam.",
+      "timestamp": 1780000000000
+    }
+  ]
+}
+```
 
 Internal/debug endpoint:
 
@@ -151,7 +171,7 @@ The ingestion response includes:
 - signal features
 - storage summary
 
-The Firebase/Next integration response is acknowledgement-only and does not include alert decisions.
+The frontend message-batch response is acknowledgement-only and does not include alert decisions.
 
 ## Daily Finalization Script
 
@@ -161,7 +181,7 @@ The Firebase/Next integration response is acknowledgement-only and does not incl
 
 At `00:05`, this evaluates the previous calendar day and sends WhatsApp alerts only for finalized parent-alert decisions.
 
-Without `--send-alerts`, the script only saves `ParentAlertDecision` records. It does not call the parent-contact endpoint and does not send WhatsApp.
+Without `--send-alerts`, the script only saves `ParentAlertDecision` records. It does not send WhatsApp.
 
 For a manual test of a known alert day:
 

@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from safe_mind.alerts.engine import rebuild_daily_alert_state, score_dict_from_model
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
-from safe_mind.storage.models import DailySignalRecord, NextIntegrationMapping
+from safe_mind.storage.models import AppUser, DailySignalRecord, NextIntegrationMapping, StoredSignalIds
 
 
 class MongoSignalStore:
@@ -36,6 +36,11 @@ class MongoSignalStore:
             db.message_events.create_index([("child_user_id", 1), ("day", 1)])
             db.next_integration_mappings.create_index("child_user_id", unique=True)
             db.user_baselines.create_index("child_user_id", unique=True)
+            db.app_users.create_index("child_user_id", unique=True)
+            db.app_users.create_index("token_hash", unique=True)
+            db.app_users.create_index([("parent_phone", 1), ("external_device_id", 1)], unique=True)
+            db.app_login_challenges.create_index("id", unique=True)
+            db.app_login_challenges.create_index("expires_at")
             self._initialized = True
 
     def ping(self) -> None:
@@ -51,7 +56,7 @@ class MongoSignalStore:
         source_app: str | None,
         features: SignalFeatures,
         pipeline_version: str,
-    ) -> str:
+    ) -> StoredSignalIds:
         day = occurred_at.date()
         scores = score_dict_from_model(features.scores)
         collection = self._db().daily_signal_scores
@@ -71,11 +76,23 @@ class MongoSignalStore:
         ):
             existing_event = self._db().message_events.find_one(
                 {"event_id": str(event_id)},
-                {"id": 1},
+                {"id": 1, "daily_signal_score_id": 1},
             )
             if not existing_event:
                 raise RuntimeError("Duplicate message event was detected but not found.")
-            return str(existing_event["id"])
+            daily_score_id = existing_event.get("daily_signal_score_id")
+            if not daily_score_id:
+                daily_row = self._db().daily_signal_scores.find_one(
+                    {"child_user_id": str(child_user_id), "day": day.isoformat()},
+                    {"id": 1},
+                )
+                daily_score_id = daily_row.get("id") if daily_row else None
+            if not daily_score_id:
+                raise RuntimeError("Duplicate message event did not include a daily signal score id.")
+            return StoredSignalIds(
+                signal_id=str(existing_event["id"]),
+                daily_score_id=str(daily_score_id),
+            )
 
         daily_id = str(uuid4())
         collection.update_one(
@@ -100,7 +117,7 @@ class MongoSignalStore:
             {"event_id": str(event_id)},
             {"$set": {"daily_signal_score_id": daily_id, "updated_at": now}},
         )
-        return signal_id
+        return StoredSignalIds(signal_id=signal_id, daily_score_id=daily_id)
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]:
         rows = self._db().daily_signal_scores.find(
@@ -233,6 +250,120 @@ class MongoSignalStore:
             updated_at=_as_datetime(row["updated_at"]),
         )
 
+    def create_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        code_hash: str,
+        expires_at: datetime,
+    ) -> None:
+        now = datetime.now(UTC)
+        self._db().app_login_challenges.insert_one(
+            {
+                "id": challenge_id,
+                "child_user_id": str(child_user_id),
+                "device_id": str(device_id),
+                "external_device_id": external_device_id,
+                "name": name,
+                "parent_phone": parent_phone,
+                "code_hash": code_hash,
+                "expires_at": expires_at,
+                "created_at": now,
+                "consumed_at": None,
+            }
+        )
+
+    def consume_login_challenge(
+        self,
+        *,
+        challenge_id: str,
+        parent_phone: str,
+        code_hash: str,
+        now: datetime,
+    ) -> AppUser | None:
+        row = self._db().app_login_challenges.find_one_and_update(
+            {
+                "id": challenge_id,
+                "parent_phone": parent_phone,
+                "code_hash": code_hash,
+                "expires_at": {"$gt": now},
+                "consumed_at": None,
+            },
+            {"$set": {"consumed_at": now}},
+        )
+        if not row:
+            return None
+        return AppUser(
+            child_user_id=UUID(row["child_user_id"]),
+            device_id=UUID(row["device_id"]),
+            external_device_id=row["external_device_id"],
+            name=row["name"],
+            parent_phone=row["parent_phone"],
+            token_hash="",
+            created_at=now,
+            updated_at=now,
+        )
+
+    def upsert_app_user(
+        self,
+        *,
+        child_user_id: UUID,
+        device_id: UUID,
+        external_device_id: str,
+        name: str,
+        parent_phone: str,
+        token_hash: str,
+    ) -> AppUser:
+        now = datetime.now(UTC)
+        self._db().app_users.update_one(
+            {"child_user_id": str(child_user_id)},
+            {
+                "$set": {
+                    "child_user_id": str(child_user_id),
+                    "device_id": str(device_id),
+                    "external_device_id": external_device_id,
+                    "name": name,
+                    "parent_phone": parent_phone,
+                    "token_hash": token_hash,
+                    "updated_at": now,
+                },
+                "$setOnInsert": {"created_at": now},
+            },
+            upsert=True,
+        )
+        user = self.get_app_user_by_child_user_id(child_user_id)
+        if user is None:
+            raise RuntimeError("MongoDB did not return a stored app user.")
+        return user
+
+    def get_app_user_by_token_hash(self, token_hash: str) -> AppUser | None:
+        return _app_user_from_row(self._db().app_users.find_one({"token_hash": token_hash}))
+
+    def get_app_user_by_child_user_id(self, child_user_id: UUID) -> AppUser | None:
+        return _app_user_from_row(
+            self._db().app_users.find_one({"child_user_id": str(child_user_id)})
+        )
+
+    def update_app_user_name(
+        self,
+        *,
+        child_user_id: UUID,
+        name: str,
+    ) -> AppUser:
+        self._db().app_users.update_one(
+            {"child_user_id": str(child_user_id)},
+            {"$set": {"name": name, "updated_at": datetime.now(UTC)}},
+        )
+        user = self.get_app_user_by_child_user_id(child_user_id)
+        if user is None:
+            raise RuntimeError("App user was not found.")
+        return user
+
     def _db(self) -> Any:
         return self._get_client()[self.database_name]
 
@@ -353,6 +484,21 @@ def _as_date(value: Any) -> date:
     if isinstance(value, date) and not isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value)).date()
+
+
+def _app_user_from_row(row: dict[str, Any] | None) -> AppUser | None:
+    if not row:
+        return None
+    return AppUser(
+        child_user_id=UUID(row["child_user_id"]),
+        device_id=UUID(row["device_id"]),
+        external_device_id=row["external_device_id"],
+        name=row["name"],
+        parent_phone=row["parent_phone"],
+        token_hash=row["token_hash"],
+        created_at=_as_datetime(row["created_at"]),
+        updated_at=_as_datetime(row["updated_at"]),
+    )
 
 
 def _atomic_daily_average_update(

@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str | None = Field(default=None, alias="SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID")
     whatsapp_template_name: str | None = Field(default=None, alias="SAFE_MIND_WHATSAPP_TEMPLATE_NAME")
     whatsapp_template_language: str = Field(default="he", alias="SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE")
+    whatsapp_verification_template_name: str | None = Field(
+        default="safe_mind_auth_code",
+        alias="SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME",
+    )
+    whatsapp_verification_template_language: str = Field(
+        default="he",
+        alias="SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_LANGUAGE",
+    )
     whatsapp_graph_api_version: str = Field(default="v23.0", alias="SAFE_MIND_WHATSAPP_GRAPH_API_VERSION")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
@@ -71,16 +79,14 @@ class Settings(BaseSettings):
             errors.append("SAFE_MIND_EVAL_AUTH_PASSWORD is required in production.")
         if not self.integration_api_token:
             errors.append("SAFE_MIND_INTEGRATION_API_TOKEN is required in production.")
-        if not self.parent_contact_url_template:
-            errors.append("SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE is required in production.")
-        if not self.parent_contact_token:
-            errors.append("SAFE_MIND_PARENT_CONTACT_TOKEN is required in production.")
         if not self.whatsapp_access_token:
             errors.append("SAFE_MIND_WHATSAPP_ACCESS_TOKEN is required in production.")
         if not self.whatsapp_phone_number_id:
             errors.append("SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID is required in production.")
         if not self.whatsapp_template_name:
             errors.append("SAFE_MIND_WHATSAPP_TEMPLATE_NAME is required in production.")
+        if not self.whatsapp_verification_template_name:
+            errors.append("SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME is required in production.")
         return errors
 
 

@@ -29,3 +29,26 @@ class IngestMessageResponse(BaseModel):
     signal_features: SignalFeatures | None = None
     stored_signal: StoredSignal
     alert_decision: ParentAlertDecision | None = None
+
+
+class StoredSignalAck(BaseModel):
+    stored: bool
+    signal_id: str | None = Field(default=None, alias="signalId")
+    daily_score_id: str | None = Field(default=None, alias="dailyScoreId")
+
+    model_config = {"populate_by_name": True}
+
+
+class AppAcceptedMessage(BaseModel):
+    message_id: str | None = Field(default=None, alias="messageId")
+    event_id: UUID = Field(alias="eventId")
+    status: Literal["accepted"]
+    stored_signal: StoredSignalAck = Field(alias="storedSignal")
+
+    model_config = {"populate_by_name": True}
+
+
+class AppMessagesResponse(BaseModel):
+    received: int
+    accepted: int
+    events: list[AppAcceptedMessage]

@@ -4,6 +4,7 @@ from time import perf_counter
 
 from fastapi import FastAPI, Request
 
+from safe_mind.api.app_auth import router as app_auth_router
 from safe_mind.api.eval_ui import router as eval_ui_router
 from safe_mind.api.health import router as health_router
 from safe_mind.api.ingestion import router as ingestion_router
@@ -40,6 +41,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(metrics_router)
+    app.include_router(app_auth_router)
     app.include_router(ingestion_router)
     app.include_router(next_integration_router)
     app.include_router(eval_ui_router)

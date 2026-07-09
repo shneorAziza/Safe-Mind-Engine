@@ -1,13 +1,14 @@
 # SafeMind Backend
 
-SafeMind is a FastAPI backend pilot for receiving child-device message events, analyzing psychological signal metrics, building a personal baseline, and finalizing parent alert decisions on closed calendar days.
+SafeMind is a FastAPI backend for registering parent/device clients, receiving child-device message batches, analyzing psychological signal metrics, building a personal baseline, and finalizing parent alert decisions on closed calendar days.
 
-The current app is backend + internal evaluation tooling. It can resolve the parent's phone number from the Firebase/Next backend and send a WhatsApp template alert to the parent.
+The current product flow is owned by this backend: WhatsApp verification, permanent app tokens, parent phone storage, message ingestion, signal storage, alert logic, and WhatsApp alert delivery.
 
 ## How The System Works
 
 ```text
 Incoming message
+  -> app token + device id verification
   -> privacy redaction
   -> psychological analyzer
   -> daily metric aggregation
@@ -40,9 +41,10 @@ MongoDB Atlas is the current working DB for the pilot.
 
 Main collections:
 
+- `app_users`: registered parent/device users, parent phone numbers, token hashes, and stable internal user/device IDs.
+- `app_login_challenges`: short-lived WhatsApp verification challenges.
 - `daily_signal_scores`: one document per child user per day.
 - `message_events`: idempotency records keyed by incoming event/message id.
-- `next_integration_mappings`: maps internal IDs back to Firebase `uid` and `deviceId`.
 - `parent_alert_decisions`: finalized alert decisions.
 - `user_baselines`: one fixed 10-day baseline vector per child user.
 
@@ -88,13 +90,12 @@ SAFE_MIND_ENABLE_EMBEDDINGS=false
 SAFE_MIND_PERSIST_SIGNALS=true
 SAFE_MIND_EVAL_AUTH_USERNAME=safemind
 SAFE_MIND_EVAL_AUTH_PASSWORD=<team password>
-SAFE_MIND_INTEGRATION_API_TOKEN=<shared token for Next backend calls into this service>
-SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE=<Next backend /api/internal/parent-contact/{uid} URL>
-SAFE_MIND_PARENT_CONTACT_TOKEN=<shared token for parent contact lookup>
 SAFE_MIND_WHATSAPP_ACCESS_TOKEN=<Meta WhatsApp access token>
 SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID=<Meta WhatsApp phone number id>
-SAFE_MIND_WHATSAPP_TEMPLATE_NAME=<approved WhatsApp template name>
+SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
 SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME=safe_mind_auth_code
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_LANGUAGE=he
 SAFE_MIND_WHATSAPP_GRAPH_API_VERSION=v23.0
 OPENAI_API_KEY=<your OpenAI key>
 ```
@@ -103,24 +104,20 @@ SQLite still exists as a local fallback, but MongoDB is the DB used for pilot te
 
 ### Current WhatsApp/Pilot Status
 
-As of 2026-06-30, the local WhatsApp Cloud API send path has been tested successfully with Meta. The approved Safe Mind Hebrew template is configured and has also been tested with a real WhatsApp send:
+As of 2026-07-09, WhatsApp Cloud API sends have been tested successfully with Meta.
 
 ```env
 SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert
 SAFE_MIND_WHATSAPP_TEMPLATE_LANGUAGE=he
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME=safe_mind_auth_code
+SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_LANGUAGE=he
 ```
 
 Meta currently reports:
 
 ```text
 safe_mind_parent_alert / APPROVED / he / MARKETING
-```
-
-Full automatic parent alert delivery also requires:
-
-```env
-SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE=<Next backend /api/internal/parent-contact/{uid} URL>
-SAFE_MIND_PARENT_CONTACT_TOKEN=<same secret as Next SAFE_MIND_INTERNAL_API_TOKEN>
+safe_mind_auth_code / APPROVED / he / AUTHENTICATION
 ```
 
 See [docs/production-readiness.md](docs/production-readiness.md) for the current handoff checklist.
@@ -148,50 +145,136 @@ http://127.0.0.1:8000/metrics
 
 ## Main API
 
-### Firebase/Next Backend Integration
+### Frontend Registration/Login
 
-The preferred product integration is the Firebase/Next backend gateway:
+Start registration or login by sending a WhatsApp verification code:
 
 ```http
-POST /v1/integrations/next/messages
-Authorization: Bearer <SAFE_MIND_INTEGRATION_API_TOKEN>
+POST /v1/auth/start
 ```
-
-Example body:
 
 ```json
 {
-  "uid": "firebase-user-id",
-  "deviceId": "firestore-device-id",
+  "deviceId": "device-unique-id-from-client",
+  "name": "Parent Or Child Name",
+  "phoneNumber": "+972584853770"
+}
+```
+
+The response returns a challenge id. The verification code is sent through WhatsApp and is not returned by the API.
+
+```json
+{
+  "challengeId": "5c7b0d66-4fd4-4fa4-9fd5-4ff1f0031d0c",
+  "status": "verification_sent",
+  "expiresAt": "2026-07-09T16:30:00Z"
+}
+```
+
+Complete the login with:
+
+```http
+POST /v1/auth/verify
+```
+
+```json
+{
+  "challengeId": "5c7b0d66-4fd4-4fa4-9fd5-4ff1f0031d0c",
+  "phoneNumber": "+972584853770",
+  "code": "123456"
+}
+```
+
+The response returns the permanent token used by the frontend:
+
+```json
+{
+  "childUserId": "778703f1-8701-540c-af16-0fdbeb965e69",
+  "deviceId": "c371f115-e27a-53b2-81fb-51fd608cca70",
+  "externalDeviceId": "device-unique-id-from-client",
+  "name": "Parent Or Child Name",
+  "phoneNumber": "+972584853770",
+  "token": "permanent-token-value"
+}
+```
+
+### Frontend User Profile
+
+```http
+GET /v1/me
+Authorization: Bearer <token>
+```
+
+```http
+PATCH /v1/me
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "Updated Name"
+}
+```
+
+### Frontend Message Batch
+
+This is the final frontend endpoint for incoming child-device messages:
+
+```http
+POST /v1/app/messages
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{
+  "deviceId": "device-unique-id-from-client",
   "messages": [
     {
-      "messageId": "stable-device-message-id",
-      "text": "I feel overwhelmed and cannot sleep.",
-      "timestamp": 1780000000000,
-      "sourceApp": "com.openai.chatgpt",
-      "locale": "en"
+      "text": "I've been feeling really overwhelmed with school lately",
+      "timestamp": 1752019200000
+    },
+    {
+      "text": "That sounds really hard. Do you want to talk about what's been the most stressful?",
+      "timestamp": 1752019205000
+    },
+    {
+      "text": "I guess I just feel like nobody understands what I'm going through",
+      "timestamp": 1752019260000
     }
   ]
 }
 ```
 
-The response is acknowledgement-only:
+Response:
 
 ```json
 {
-  "received": 1,
-  "accepted": 1,
-  "childUserId": "...",
-  "deviceId": "...",
+  "received": 3,
+  "accepted": 3,
   "events": [
     {
-      "messageId": "stable-device-message-id",
-      "eventId": "...",
-      "status": "accepted"
+      "messageId": null,
+      "eventId": "bccad0ca-b345-5eca-a181-4d4eac198994",
+      "status": "accepted",
+      "storedSignal": {
+        "stored": true,
+        "signalId": "5b4ccb62-2887-44a3-8cdf-1995834ca48c",
+        "dailyScoreId": "0702ad9b-887b-4e6f-91e2-6c1e1f1387d3"
+      }
     }
   ]
 }
 ```
+
+`deviceId` is required and must match the device id used during registration/login. `messages` accepts 1 to 100 messages per request. Each message needs `text` and either `timestamp` in milliseconds or `occurredAt` as ISO 8601.
+
+See [docs/frontend-api-contract.md](docs/frontend-api-contract.md) for the full frontend contract.
+
+### Legacy/Internal Next Integration
+
+`POST /v1/integrations/next/messages` still exists for older backend-to-backend integration tests, but it is not the frontend endpoint for the current product flow.
 
 ### Direct Internal Ingestion
 
