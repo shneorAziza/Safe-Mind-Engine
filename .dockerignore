@@ -13,6 +13,11 @@ __pycache__
 *.out
 *.err
 data/
+docs/
+tests/
+*.md
+!README.md
+safe_mind.egg-info/
 dist/
 build/
 htmlcov/

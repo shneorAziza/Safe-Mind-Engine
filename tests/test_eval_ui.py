@@ -2,7 +2,7 @@ from fastapi.testclient import TestClient
 
 import safe_mind.api.eval_ui as eval_ui
 from safe_mind.analysis.models import PsychologicalScores, SignalFeatures
-from safe_mind.main import app
+from safe_mind.main import app, create_app
 from safe_mind.storage.models import DailySignalRecord
 from safe_mind.storage.vector_store import SQLiteVectorStore
 from uuid import UUID, uuid4
@@ -33,6 +33,15 @@ def test_eval_page_loads() -> None:
     assert "CSV columns: timestamp,message" in response.text
     assert "Internal dataset simulation for historical monitoring" in response.text
     assert "Request embedding preview" not in response.text
+
+
+def test_eval_router_can_be_disabled(monkeypatch) -> None:
+    monkeypatch.setattr("safe_mind.core.config.settings.enable_eval_ui", False)
+    client = TestClient(create_app())
+
+    response = client.get("/eval")
+
+    assert response.status_code == 404
 
 
 def test_eval_requires_auth_when_password_is_configured(monkeypatch) -> None:

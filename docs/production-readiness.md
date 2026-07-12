@@ -112,7 +112,8 @@ Create the Hebrew authentication-code template again if needed:
 
 - Confirm the production WhatsApp templates remain approved:
   `safe_mind_parent_alert` and `safe_mind_auth_code`.
-- Configure MongoDB, WhatsApp, OpenAI, Eval auth, and production secret values.
+- Configure MongoDB, WhatsApp, OpenAI, Eval Basic Auth, and production secret values.
+- Keep `/eval` exposed only on the API Lambda and protected with `SAFE_MIND_EVAL_AUTH_PASSWORD`.
 - Run one end-to-end auth and message-ingestion test through `/v1/auth/start`, `/v1/auth/verify`, and `/v1/app/messages`.
 - Schedule the finalizer with `--send-alerts`.
 - Decide finalizer timezone. The code currently finalizes the previous UTC day by default.

@@ -14,7 +14,7 @@ COPY safe_mind ./safe_mind
 COPY scripts ./scripts
 
 RUN python -m pip install --upgrade pip \
-    && python -m pip install .
+    && python -m pip install ".[server]"
 
 USER safemind
 

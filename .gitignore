@@ -24,6 +24,7 @@ uvicorn-*.err
 data/*.sqlite3
 data/*.sqlite
 data/*.db
+data/*.jsonl
 github-safemind-backend/
 *.postman_collection.json
 *.postman_environment.json

@@ -26,6 +26,7 @@
         { "name": "SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER", "value": "openai" },
         { "name": "SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL", "value": "gpt-4o-mini" },
         { "name": "SAFE_MIND_ENABLE_EMBEDDINGS", "value": "false" },
+        { "name": "SAFE_MIND_ENABLE_EVAL_UI", "value": "true" },
         { "name": "SAFE_MIND_PERSIST_SIGNALS", "value": "true" },
         { "name": "SAFE_MIND_EVAL_AUTH_USERNAME", "value": "safemind" }
       ],

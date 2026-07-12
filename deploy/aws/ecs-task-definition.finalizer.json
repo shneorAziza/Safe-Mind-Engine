@@ -19,13 +19,12 @@
         { "name": "SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER", "value": "openai" },
         { "name": "SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL", "value": "gpt-4o-mini" },
         { "name": "SAFE_MIND_ENABLE_EMBEDDINGS", "value": "false" },
-        { "name": "SAFE_MIND_PERSIST_SIGNALS", "value": "true" },
-        { "name": "SAFE_MIND_EVAL_AUTH_USERNAME", "value": "safemind" }
+        { "name": "SAFE_MIND_ENABLE_EVAL_UI", "value": "false" },
+        { "name": "SAFE_MIND_PERSIST_SIGNALS", "value": "true" }
       ],
       "secrets": [
         { "name": "SAFE_MIND_MONGODB_URI", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/mongodb-uri" },
         { "name": "OPENAI_API_KEY", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/openai-api-key" },
-        { "name": "SAFE_MIND_EVAL_AUTH_PASSWORD", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/eval-auth-password" },
         { "name": "SAFE_MIND_INTEGRATION_API_TOKEN", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/integration-api-token" },
         { "name": "SAFE_MIND_PARENT_CONTACT_URL_TEMPLATE", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/parent-contact-url-template" },
         { "name": "SAFE_MIND_PARENT_CONTACT_TOKEN", "valueFrom": "arn:aws:secretsmanager:<region>:<account-id>:secret:safe-mind/prod/parent-contact-token" },

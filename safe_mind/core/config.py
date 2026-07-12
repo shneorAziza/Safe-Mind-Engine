@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     mongodb_database: str = Field(default="safe_mind", alias="SAFE_MIND_MONGODB_DATABASE")
     pipeline_version: str = Field(default="v1", alias="SAFE_MIND_PIPELINE_VERSION")
     persist_signals: bool = Field(default=True, alias="SAFE_MIND_PERSIST_SIGNALS")
+    enable_eval_ui: bool = Field(default=True, alias="SAFE_MIND_ENABLE_EVAL_UI")
     eval_auth_username: str = Field(default="safemind", alias="SAFE_MIND_EVAL_AUTH_USERNAME")
     eval_auth_password: str | None = Field(default=None, alias="SAFE_MIND_EVAL_AUTH_PASSWORD")
     integration_api_token: str | None = Field(default=None, alias="SAFE_MIND_INTEGRATION_API_TOKEN")
@@ -75,7 +76,7 @@ class Settings(BaseSettings):
             errors.append("SAFE_MIND_MONGODB_URI is required in production.")
         if self.psychological_analyzer_provider == "openai" and not self.openai_api_key:
             errors.append("OPENAI_API_KEY is required when the production analyzer provider is openai.")
-        if not self.eval_auth_password:
+        if self.enable_eval_ui and not self.eval_auth_password:
             errors.append("SAFE_MIND_EVAL_AUTH_PASSWORD is required in production.")
         if not self.integration_api_token:
             errors.append("SAFE_MIND_INTEGRATION_API_TOKEN is required in production.")

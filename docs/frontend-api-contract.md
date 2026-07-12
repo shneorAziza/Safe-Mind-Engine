@@ -360,3 +360,6 @@ POST /eval/run
 POST /eval/datasets/run
 GET /metrics
 ```
+
+The Eval endpoints are enabled for the team on the production API Lambda and require Basic Auth.
+They are internal tools and must not be called by the frontend app.

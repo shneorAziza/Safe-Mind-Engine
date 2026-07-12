@@ -97,6 +97,7 @@ SAFE_MIND_MONGODB_DATABASE=safe_mind
 SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 SAFE_MIND_ENABLE_EMBEDDINGS=false
+SAFE_MIND_ENABLE_EVAL_UI=true
 SAFE_MIND_PERSIST_SIGNALS=true
 SAFE_MIND_EVAL_AUTH_USERNAME=safemind
 ```
@@ -116,7 +117,7 @@ SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_NAME
 SAFE_MIND_WHATSAPP_VERIFICATION_TEMPLATE_LANGUAGE
 ```
 
-The app now fails closed in production if any required secret is missing.
+The app now fails closed in production if any required secret is missing. The API Lambda exposes the internal Eval dashboard for the team and requires Basic Auth.
 
 ## Local Production Smoke Test
 
@@ -167,9 +168,9 @@ We will do these together if Lambda is the required target:
 8. Configure environment variables and secrets.
 9. Create a Lambda Function URL or API Gateway HTTP API.
 10. Verify `/health/live`, `/health/ready`, and Basic Auth on `/eval`.
-11. Create Lambda function `safe-mind-finalizer` from the same image.
-12. Override its image command to `safe_mind.lambda_finalizer.handler`.
-13. Create an EventBridge schedule for daily finalization.
+12. Create Lambda function `safe-mind-finalizer` from the same image.
+13. Override its image command to `safe_mind.lambda_finalizer.handler`.
+14. Create an EventBridge schedule for daily finalization.
 
 ## First AWS ECS Deployment Steps
 
@@ -211,7 +212,7 @@ Use these if we choose ECS/Fargate instead of Lambda:
 - Domain name and TLS certificate.
 - AWS region.
 - Whether MongoDB Atlas allows all AWS outbound IPs or we use a tighter network setup.
-- Whether the internal `/eval` dashboard should be exposed publicly behind Basic Auth or restricted further.
+- Whether `/eval` should later be restricted by VPN/IP allowlist/API Gateway policy in addition to Basic Auth.
 - Exact finalizer timezone. The code currently finalizes the previous UTC day by default.
 - Production WhatsApp template approval and final template language code.
 - Secret rotation before production if any development token was shared outside a secret manager.

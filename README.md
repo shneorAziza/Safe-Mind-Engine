@@ -88,6 +88,7 @@ SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 SAFE_MIND_ENABLE_EMBEDDINGS=false
 SAFE_MIND_PERSIST_SIGNALS=true
+SAFE_MIND_ENABLE_EVAL_UI=true
 SAFE_MIND_EVAL_AUTH_USERNAME=safemind
 SAFE_MIND_EVAL_AUTH_PASSWORD=<team password>
 SAFE_MIND_WHATSAPP_ACCESS_TOKEN=<Meta WhatsApp access token>
@@ -309,7 +310,7 @@ Use it to:
 - inspect alert timelines,
 - verify baseline days, flagged days, alert days, and reasons.
 
-This dashboard is internal only. When `SAFE_MIND_EVAL_AUTH_PASSWORD` is configured, it requires HTTP Basic Auth. In production, missing Eval auth configuration fails closed.
+This dashboard is internal only. The AWS Lambda API template enables it with `SAFE_MIND_ENABLE_EVAL_UI=true` for the team, and production requires HTTP Basic Auth through `SAFE_MIND_EVAL_AUTH_USERNAME` and `SAFE_MIND_EVAL_AUTH_PASSWORD`. If the auth password is missing, production fails closed.
 
 Before using Eval with the production-equivalent MongoDB path, verify the configured store works:
 
@@ -432,7 +433,7 @@ The script prints the generated `child_user_id`. Use it in the Eval dashboard ti
 Current expected result:
 
 ```text
-47 passed
+49 passed
 ```
 
 ## AWS Production Prep
