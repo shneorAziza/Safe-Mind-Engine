@@ -3,7 +3,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, model_validator
 
 RiskLevel = Literal["none", "low", "medium", "high", "urgent"]
-AnalyzerProvider = Literal["heuristic", "openai"]
+AnalyzerProvider = Literal["heuristic", "openai", "bedrock"]
 
 
 class PsychologicalScores(BaseModel):

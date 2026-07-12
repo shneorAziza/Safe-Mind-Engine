@@ -19,7 +19,7 @@ def test_production_config_requires_secrets() -> None:
 
     assert "SAFE_MIND_SIGNAL_STORE_PROVIDER must be mongodb in production." in errors
     assert "SAFE_MIND_MONGODB_URI is required in production." in errors
-    assert "OPENAI_API_KEY is required when the production analyzer provider is openai." in errors
+    assert "OPENAI_API_KEY is required when production uses OpenAI models or embeddings." in errors
     assert "SAFE_MIND_EVAL_AUTH_PASSWORD is required in production." in errors
     assert "SAFE_MIND_INTEGRATION_API_TOKEN is required in production." in errors
     assert "SAFE_MIND_WHATSAPP_ACCESS_TOKEN is required in production." in errors
@@ -61,3 +61,22 @@ def test_disabled_eval_ui_does_not_require_eval_password() -> None:
     )
 
     assert "SAFE_MIND_EVAL_AUTH_PASSWORD is required in production." not in settings.production_config_errors()
+
+
+def test_bedrock_production_config_does_not_require_openai_key() -> None:
+    settings = Settings(
+        _env_file=None,
+        SAFE_MIND_ENV="production",
+        SAFE_MIND_SIGNAL_STORE_PROVIDER="mongodb",
+        SAFE_MIND_MONGODB_URI="mongodb+srv://example.invalid/safe_mind",
+        SAFE_MIND_EMOTIONAL_FILTER_PROVIDER="bedrock",
+        SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER="bedrock",
+        SAFE_MIND_ENABLE_EMBEDDINGS=False,
+        SAFE_MIND_EVAL_AUTH_PASSWORD="eval-secret",
+        SAFE_MIND_INTEGRATION_API_TOKEN="ingest-secret",
+        SAFE_MIND_WHATSAPP_ACCESS_TOKEN="whatsapp-secret",
+        SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID="123456789",
+        SAFE_MIND_WHATSAPP_TEMPLATE_NAME="safe_mind_alert",
+    )
+
+    assert settings.production_config_errors() == []

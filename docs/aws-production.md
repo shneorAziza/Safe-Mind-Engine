@@ -62,8 +62,12 @@ AWS:
 External services:
 
 - MongoDB Atlas connection string.
-- OpenAI API key.
+- OpenAI API key for `gpt-4o-mini`.
 - Meta WhatsApp access token, phone number ID, approved parent-alert template, approved auth-code template, and template language.
+
+Current model decision: keep OpenAI `gpt-4o-mini` for production. Bedrock support
+exists in code only as an optional future provider and is not used by the current
+Lambda templates.
 
 Current pilot note, 2026-07-09: local WhatsApp sending works through Meta. The approved templates currently configured are `safe_mind_parent_alert / APPROVED / he / MARKETING` and `safe_mind_auth_code / APPROVED / he / AUTHENTICATION`.
 
@@ -94,6 +98,8 @@ Non-secret task environment:
 SAFE_MIND_ENV=production
 SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb
 SAFE_MIND_MONGODB_DATABASE=safe_mind
+SAFE_MIND_EMOTIONAL_FILTER_PROVIDER=openai
+SAFE_MIND_OPENAI_EMOTIONAL_FILTER_MODEL=gpt-4o-mini
 SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 SAFE_MIND_ENABLE_EMBEDDINGS=false
@@ -141,6 +147,7 @@ The ready check needs MongoDB network access and valid secrets.
 - `Dockerfile.lambda`: Lambda-compatible container image.
 - `safe_mind/lambda_handler.py`: FastAPI adapter for Lambda/API Gateway/Function URL.
 - `safe_mind/lambda_finalizer.py`: EventBridge-friendly finalizer handler.
+- `deploy/aws/bedrock-invoke-policy.json`: optional IAM policy snippet if Bedrock is enabled later.
 - `deploy/aws/lambda-api-function.template.json`: API Lambda template.
 - `deploy/aws/lambda-finalizer-function.template.json`: finalizer Lambda template.
 
@@ -168,9 +175,33 @@ We will do these together if Lambda is the required target:
 8. Configure environment variables and secrets.
 9. Create a Lambda Function URL or API Gateway HTTP API.
 10. Verify `/health/live`, `/health/ready`, and Basic Auth on `/eval`.
-12. Create Lambda function `safe-mind-finalizer` from the same image.
-13. Override its image command to `safe_mind.lambda_finalizer.handler`.
-14. Create an EventBridge schedule for daily finalization.
+11. Create Lambda function `safe-mind-finalizer` from the same image.
+12. Override its image command to `safe_mind.lambda_finalizer.handler`.
+13. Create an EventBridge schedule for daily finalization.
+
+## Current Step-By-Step Deployment Handoff
+
+The user is learning AWS and wants to proceed one completed step at a time.
+
+Completed:
+
+- Docker Desktop is installed/open.
+- AWS CLI v2 is installed locally.
+- Root AWS Console login works.
+- Root MFA was completed.
+- Bedrock was discussed and rejected as the active model path because the user
+  wants to keep the exact existing model, OpenAI `gpt-4o-mini`.
+
+Next step:
+
+1. In AWS Console, open `IAM`.
+2. Go to `Users`.
+3. Click `Create user`.
+4. Username: `safe-mind-deploy`.
+5. Do not enable Console access.
+6. Permissions: `Attach policies directly`.
+7. For the first deployment only, attach `AdministratorAccess`.
+8. Create the user, then stop and create an access key in the next guided step.
 
 ## First AWS ECS Deployment Steps
 

@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     env: str = Field(default="local", alias="SAFE_MIND_ENV")
     api_title: str = Field(default="SafeMind Backend", alias="SAFE_MIND_API_TITLE")
-    emotional_filter_provider: Literal["heuristic", "openai"] = Field(
+    emotional_filter_provider: Literal["heuristic", "openai", "bedrock"] = Field(
         default="openai",
         alias="SAFE_MIND_EMOTIONAL_FILTER_PROVIDER",
     )
@@ -16,7 +16,11 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         alias="SAFE_MIND_OPENAI_EMOTIONAL_FILTER_MODEL",
     )
-    psychological_analyzer_provider: Literal["heuristic", "openai"] = Field(
+    bedrock_emotional_filter_model: str = Field(
+        default="anthropic.claude-3-haiku-20240307-v1:0",
+        alias="SAFE_MIND_BEDROCK_EMOTIONAL_FILTER_MODEL",
+    )
+    psychological_analyzer_provider: Literal["heuristic", "openai", "bedrock"] = Field(
         default="openai",
         alias="SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER",
     )
@@ -24,6 +28,11 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         alias="SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL",
     )
+    bedrock_psychological_analyzer_model: str = Field(
+        default="anthropic.claude-3-haiku-20240307-v1:0",
+        alias="SAFE_MIND_BEDROCK_PSYCHOLOGICAL_ANALYZER_MODEL",
+    )
+    bedrock_region: str = Field(default="us-east-1", alias="SAFE_MIND_BEDROCK_REGION")
     openai_embedding_model: str = Field(
         default="text-embedding-3-small",
         alias="SAFE_MIND_OPENAI_EMBEDDING_MODEL",
@@ -74,8 +83,12 @@ class Settings(BaseSettings):
             errors.append("SAFE_MIND_SIGNAL_STORE_PROVIDER must be mongodb in production.")
         if not self.mongodb_uri:
             errors.append("SAFE_MIND_MONGODB_URI is required in production.")
-        if self.psychological_analyzer_provider == "openai" and not self.openai_api_key:
-            errors.append("OPENAI_API_KEY is required when the production analyzer provider is openai.")
+        if (
+            self.emotional_filter_provider == "openai"
+            or self.psychological_analyzer_provider == "openai"
+            or self.enable_embeddings
+        ) and not self.openai_api_key:
+            errors.append("OPENAI_API_KEY is required when production uses OpenAI models or embeddings.")
         if self.enable_eval_ui and not self.eval_auth_password:
             errors.append("SAFE_MIND_EVAL_AUTH_PASSWORD is required in production.")
         if not self.integration_api_token:

@@ -46,6 +46,14 @@ def _error_payload(exc: Exception) -> dict[str, Any]:
     return payload
 
 
+def _configured_analyzer_model() -> str | None:
+    if settings.psychological_analyzer_provider == "openai":
+        return settings.openai_psychological_analyzer_model
+    if settings.psychological_analyzer_provider == "bedrock":
+        return settings.bedrock_psychological_analyzer_model
+    return None
+
+
 def process_message(
     payload: IngestMessageRequest,
     *,
@@ -101,9 +109,7 @@ def process_message(
                     output={
                         "error": _error_payload(exc),
                         "configured_provider": settings.psychological_analyzer_provider,
-                        "configured_model": settings.openai_psychological_analyzer_model
-                        if settings.psychological_analyzer_provider == "openai"
-                        else None,
+                        "configured_model": _configured_analyzer_model(),
                     },
                 )
             )
@@ -125,9 +131,7 @@ def process_message(
                 output={
                     "signal_features": psychological_analysis.features.model_dump(),
                     "configured_provider": settings.psychological_analyzer_provider,
-                    "configured_model": settings.openai_psychological_analyzer_model
-                    if settings.psychological_analyzer_provider == "openai"
-                    else None,
+                    "configured_model": _configured_analyzer_model(),
                 },
             )
         )

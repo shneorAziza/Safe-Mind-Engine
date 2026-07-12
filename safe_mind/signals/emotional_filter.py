@@ -14,7 +14,7 @@ EmotionCategory = Literal[
     "safety_risk",
 ]
 RiskHint = Literal["none", "possible", "urgent"]
-EmotionalFilterProvider = Literal["heuristic", "openai"]
+EmotionalFilterProvider = Literal["heuristic", "openai", "bedrock"]
 
 
 class EmotionalFilterResult(BaseModel):

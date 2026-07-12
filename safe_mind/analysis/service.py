@@ -1,3 +1,4 @@
+from safe_mind.analysis.bedrock_analyzer import BedrockPsychologicalAnalyzer
 from safe_mind.analysis.heuristic_analyzer import analyze_with_heuristics
 from safe_mind.analysis.models import PsychologicalAnalysisResult
 from safe_mind.analysis.openai_analyzer import OpenAIPsychologicalAnalyzer
@@ -13,6 +14,12 @@ def run_psychological_analyzer(
         return OpenAIPsychologicalAnalyzer(
             api_key=settings.openai_api_key,
             model=settings.openai_psychological_analyzer_model,
+        ).analyze(text, allow_fallback=allow_fallback)
+
+    if settings.psychological_analyzer_provider == "bedrock":
+        return BedrockPsychologicalAnalyzer(
+            model=settings.bedrock_psychological_analyzer_model,
+            region=settings.bedrock_region,
         ).analyze(text, allow_fallback=allow_fallback)
 
     return analyze_with_heuristics(text)

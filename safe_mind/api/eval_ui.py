@@ -495,11 +495,15 @@ def _status(stored_signal: StoredSignal) -> Literal["stored", "preview", "no_vec
 
 
 def _runtime_info() -> EvalRuntimeInfo:
+    analyzer_model = None
+    if settings.psychological_analyzer_provider == "openai":
+        analyzer_model = settings.openai_psychological_analyzer_model
+    elif settings.psychological_analyzer_provider == "bedrock":
+        analyzer_model = settings.bedrock_psychological_analyzer_model
+
     return EvalRuntimeInfo(
         psychological_analyzer_provider=settings.psychological_analyzer_provider,
-        psychological_analyzer_model=settings.openai_psychological_analyzer_model
-        if settings.psychological_analyzer_provider == "openai"
-        else None,
+        psychological_analyzer_model=analyzer_model,
         embedding_provider="openai" if settings.enable_embeddings and settings.openai_api_key else None,
         embedding_model=settings.openai_embedding_model if settings.enable_embeddings and settings.openai_api_key else None,
         strict_model_eval=True,

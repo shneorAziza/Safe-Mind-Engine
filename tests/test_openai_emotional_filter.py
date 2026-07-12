@@ -1,4 +1,7 @@
+import json
+
 from safe_mind.signals.openai_emotional_filter import OpenAIEmotionalFilter
+from safe_mind.signals.bedrock_emotional_filter import BedrockEmotionalFilter
 
 
 class FakeMessage:
@@ -87,3 +90,44 @@ def test_openai_filter_overrides_missed_hebrew_life_ending_language() -> None:
     assert result.risk_hint == "urgent"
     assert "safety_risk" in result.categories
     assert result.provider == "openai"
+
+
+class FakeBedrockBody:
+    def __init__(self, payload: str) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return self.payload.encode("utf-8")
+
+
+class FakeBedrockClient:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.kwargs = None
+
+    def invoke_model(self, **kwargs):
+        self.kwargs = kwargs
+        return {
+            "body": FakeBedrockBody(
+                json.dumps({"content": [{"type": "text", "text": self.text}]})
+            )
+        }
+
+
+def test_bedrock_filter_parses_claude_messages_response() -> None:
+    fake_client = FakeBedrockClient(
+        '{"is_emotionally_relevant":true,"confidence":0.88,'
+        '"categories":["loneliness"],"risk_hint":"none"}'
+    )
+    service = BedrockEmotionalFilter(
+        model="anthropic.test-model",
+        region="us-east-1",
+        client=fake_client,
+    )
+
+    result = service.filter("Nobody understands me.")
+
+    assert result.provider == "bedrock"
+    assert result.categories == ["loneliness"]
+    assert result.confidence == 0.88
+    assert fake_client.kwargs["modelId"] == "anthropic.test-model"

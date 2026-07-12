@@ -84,6 +84,8 @@ For the current pilot flow, use MongoDB:
 SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb
 SAFE_MIND_MONGODB_URI=<your MongoDB Atlas connection string>
 SAFE_MIND_MONGODB_DATABASE=safe_mind
+SAFE_MIND_EMOTIONAL_FILTER_PROVIDER=openai
+SAFE_MIND_OPENAI_EMOTIONAL_FILTER_MODEL=gpt-4o-mini
 SAFE_MIND_PSYCHOLOGICAL_ANALYZER_PROVIDER=openai
 SAFE_MIND_OPENAI_PSYCHOLOGICAL_ANALYZER_MODEL=gpt-4o-mini
 SAFE_MIND_ENABLE_EMBEDDINGS=false
@@ -102,6 +104,7 @@ OPENAI_API_KEY=<your OpenAI key>
 ```
 
 SQLite still exists as a local fallback, but MongoDB is the DB used for pilot testing.
+Production model inference uses OpenAI `gpt-4o-mini`. Amazon Bedrock support exists in the codebase for a future provider switch, but it is not the active production path.
 
 ### Current WhatsApp/Pilot Status
 

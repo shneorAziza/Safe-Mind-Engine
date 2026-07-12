@@ -2,6 +2,8 @@
 
 Last updated: 2026-07-09
 
+Deployment handoff update: 2026-07-12
+
 This file captures the current handoff state for continuing tomorrow.
 
 ## What Is Ready
@@ -114,6 +116,8 @@ Create the Hebrew authentication-code template again if needed:
   `safe_mind_parent_alert` and `safe_mind_auth_code`.
 - Configure MongoDB, WhatsApp, OpenAI, Eval Basic Auth, and production secret values.
 - Keep `/eval` exposed only on the API Lambda and protected with `SAFE_MIND_EVAL_AUTH_PASSWORD`.
+- Keep the active model path on OpenAI `gpt-4o-mini`; Bedrock support is optional future code only.
+- Continue AWS deployment guidance from IAM user creation: create `safe-mind-deploy`, no Console access, attach `AdministratorAccess` for the first deployment, then create a CLI access key.
 - Run one end-to-end auth and message-ingestion test through `/v1/auth/start`, `/v1/auth/verify`, and `/v1/app/messages`.
 - Schedule the finalizer with `--send-alerts`.
 - Decide finalizer timezone. The code currently finalizes the previous UTC day by default.

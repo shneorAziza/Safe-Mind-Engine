@@ -80,9 +80,11 @@ safe_mind/
     redactor.py
   signals/
     emotional_filter.py
+    bedrock_emotional_filter.py
     openai_emotional_filter.py
     service.py
   analysis/
+    bedrock_analyzer.py
     heuristic_analyzer.py
     openai_analyzer.py
     service.py
@@ -162,3 +164,12 @@ Basic pilot metrics:
 ```text
 GET /metrics
 ```
+
+## Model Providers
+
+The active production provider remains OpenAI with `gpt-4o-mini` for both model
+scoring stages.
+
+Amazon Bedrock provider support exists in code for a future switch, but it is
+not the active deployment path. Do not replace `gpt-4o-mini` with a Bedrock
+model unless the user explicitly asks to change models.

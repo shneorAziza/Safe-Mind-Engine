@@ -1,4 +1,7 @@
+import json
+
 from safe_mind.analysis.heuristic_analyzer import analyze_with_heuristics
+from safe_mind.analysis.bedrock_analyzer import BedrockPsychologicalAnalyzer
 from safe_mind.analysis.openai_analyzer import OpenAIPsychologicalAnalyzer
 
 
@@ -71,3 +74,60 @@ def test_openai_analyzer_parses_compact_structured_scores() -> None:
     assert result.features.scores.negative_emotion == 4
     assert result.features.provider == "openai"
     assert result.summary_for_embedding is None
+
+
+class FakeBedrockBody:
+    def __init__(self, payload: str) -> None:
+        self.payload = payload
+
+    def read(self) -> bytes:
+        return self.payload.encode("utf-8")
+
+
+class FakeBedrockClient:
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.kwargs = None
+
+    def invoke_model(self, **kwargs):
+        self.kwargs = kwargs
+        return {
+            "body": FakeBedrockBody(
+                json.dumps({"content": [{"type": "text", "text": self.text}]})
+            )
+        }
+
+
+def test_bedrock_analyzer_parses_claude_messages_response() -> None:
+    model_json = """
+    {
+      "features": {
+        "should_store": true,
+        "signal_strength": 0.74,
+        "risk_level": "low",
+        "scores": {
+          "positive_emotion": 4,
+          "negative_emotion": 5,
+          "loneliness": 2,
+          "anxiety_stress": 7,
+          "hopelessness": 1,
+          "self_worth_low": 2,
+          "risk": 1
+        },
+        "confidence": 0.84,
+        "provider": "bedrock"
+      }
+    }
+    """
+    fake_client = FakeBedrockClient(model_json)
+    service = BedrockPsychologicalAnalyzer(
+        model="anthropic.test-model",
+        region="us-east-1",
+        client=fake_client,
+    )
+
+    result = service.analyze("I feel anxious about school.")
+
+    assert result.features.provider == "bedrock"
+    assert result.features.scores.anxiety_stress == 7
+    assert fake_client.kwargs["modelId"] == "anthropic.test-model"

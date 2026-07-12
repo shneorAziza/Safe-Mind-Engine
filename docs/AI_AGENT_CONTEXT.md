@@ -53,6 +53,16 @@ Current handoff status, 2026-07-09:
 - The final frontend ingestion endpoint is `POST /v1/app/messages`.
 - Use [production-readiness.md](production-readiness.md) as the current checklist before production.
 
+Deployment handoff update, 2026-07-12:
+
+- The user is new to AWS and wants to continue deployment step-by-step, one completed step at a time.
+- Docker Desktop is installed and open.
+- AWS CLI v2 is installed and `aws --version` returned `aws-cli/2.35.21 Python/3.14.6 Windows/11 exe/AMD64`.
+- The user signed in to AWS Console with root email/password and completed root MFA.
+- The next AWS Console step is creating an IAM user named `safe-mind-deploy` for CLI deployment access.
+- Active production model provider must stay OpenAI using `gpt-4o-mini`; do not switch the active deployment path to Bedrock/Claude.
+- Bedrock support exists in code as an optional future provider, but it is not the current production configuration.
+
 ## Psychological Metrics
 
 Each analyzed message returns:
@@ -240,8 +250,13 @@ safe_mind/
     models.py
   analysis/
     models.py
+    bedrock_analyzer.py
     openai_analyzer.py
     heuristic_analyzer.py
+    service.py
+  signals/
+    bedrock_emotional_filter.py
+    openai_emotional_filter.py
     service.py
   alerts/
     engine.py
@@ -370,7 +385,7 @@ Run tests:
 Current expected result:
 
 ```text
-65 passed
+70 passed
 ```
 
 ## Privacy Rules
@@ -408,3 +423,4 @@ Allowed storage:
 11. Incoming message requests acknowledge receipt only; parent alert sending is based on closed-day finalization.
 12. In production, SQLite is rejected; `SAFE_MIND_SIGNAL_STORE_PROVIDER` must be `mongodb`.
 13. End-to-end frontend tests must register through `/v1/auth/start` and `/v1/auth/verify`, then ingest through `/v1/app/messages` with the returned token and matching `deviceId`.
+14. Active production inference uses OpenAI `gpt-4o-mini`; Bedrock is optional future support only.
