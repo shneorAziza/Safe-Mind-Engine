@@ -121,9 +121,10 @@ def build_alert_timeline(
     rebuilt_records, baseline_scores, _ = rebuild_daily_alert_state(records, policy=active_policy)
     records_by_day = {record.day: record for record in rebuilt_records}
     first_signal_day = min(records_by_day) if records_by_day else None
-    baseline_end = (
-        first_signal_day + timedelta(days=active_policy.baseline_calibration_days)
-        if first_signal_day
+    baseline_records = [record for record in rebuilt_records if record.is_baseline_day]
+    baseline_complete_day = (
+        baseline_records[-1].day
+        if len(baseline_records) >= active_policy.min_baseline_days
         else None
     )
     timeline: list[AlertTimelineDay] = []
@@ -134,7 +135,12 @@ def build_alert_timeline(
         timeline.append(
             AlertTimelineDay(
                 day=current_day,
-                phase=_phase_for_day(current_day, first_signal_day, baseline_end),
+                phase=_phase_for_day(
+                    current_day,
+                    first_signal_day=first_signal_day,
+                    record=record,
+                    baseline_complete_day=baseline_complete_day,
+                ),
                 message_count=record.message_count if record else 0,
                 scores=record.scores if record else None,
                 baseline_scores=baseline_scores
@@ -292,13 +298,17 @@ def _average_score_dict(records: list[DailySignalRecord]) -> dict[str, float]:
 
 def _phase_for_day(
     day: date,
+    *,
     first_signal_day: date | None,
-    baseline_end: date | None,
+    record: DailySignalRecord | None,
+    baseline_complete_day: date | None,
 ) -> TimelinePhase:
     if first_signal_day is None or day < first_signal_day:
         return "pre_baseline"
-    if baseline_end is not None and day < baseline_end:
+    if record and record.is_baseline_day:
         return "baseline"
+    if baseline_complete_day is None or day <= baseline_complete_day:
+        return "pre_baseline"
     return "monitoring"
 
 

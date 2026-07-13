@@ -329,7 +329,9 @@ http://127.0.0.1:8000/eval
 
 ### Large Dataset Evaluation
 
-Use the **Dataset Simulation** panel for team evaluation. The UI accepts CSV or JSON, creates a real synthetic child user, persists every message through the configured pipeline, finalizes every message day, and then shows the alert dashboard for that user.
+Use the **Dataset Simulation** panel for team evaluation. The UI accepts CSV or JSON, creates a fresh synthetic child user for each run, persists every message through the configured pipeline, finalizes every message day, and then shows the alert dashboard for that user.
+
+The React Eval UI also includes a copyable AI prompt for generating long CSV datasets, requested alert-day input, WhatsApp-send controls, loading states, and compact clickable run-result rows with expandable day details.
 
 Recommended CSV shape:
 
@@ -436,15 +438,103 @@ The script prints the generated `child_user_id`. Use it in the Eval dashboard ti
 Current expected result:
 
 ```text
-49 passed
+71 passed
 ```
 
-## AWS Production Prep
+## AWS Production
 
-Production deployment prep lives in:
+SafeMind is currently running in production on AWS. From this point forward,
+code changes are not live until a new Lambda container image is built, pushed
+to ECR, and applied to the production Lambda function.
+
+Production deployment references live in:
 
 - [docs/aws-production.md](docs/aws-production.md)
 - [deploy/aws/](deploy/aws/)
+
+Current production API:
+
+```text
+https://qi86pazbij.execute-api.us-east-1.amazonaws.com
+```
+
+This URL is an API Gateway HTTP API in front of the `safe-mind-api` Lambda
+container. The Lambda image is stored in ECR:
+
+```text
+415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api
+```
+
+Production AWS settings:
+
+```text
+AWS profile: safe-mind-deploy
+AWS region: us-east-1
+Lambda function: safe-mind-api
+ECR image tag currently used: latest
+```
+
+### Deploy Code Changes To Production
+
+Run these commands after making and testing code changes locally.
+
+Authenticate Docker to ECR:
+
+```powershell
+aws ecr get-login-password --region us-east-1 --profile safe-mind-deploy `
+  | docker login --username AWS --password-stdin 415019015823.dkr.ecr.us-east-1.amazonaws.com
+```
+
+Build the Lambda-compatible image from the current working tree:
+
+```powershell
+docker buildx build --platform linux/amd64 --provenance=false `
+  -f Dockerfile.lambda `
+  -t safe-mind-api:latest .
+```
+
+Tag and push the image to ECR:
+
+```powershell
+docker tag safe-mind-api:latest 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest
+docker push 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest
+```
+
+Update the production Lambda to use the newly pushed image:
+
+```powershell
+aws lambda update-function-code `
+  --function-name safe-mind-api `
+  --image-uri 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest `
+  --region us-east-1 `
+  --profile safe-mind-deploy
+```
+
+Verify production health after the update:
+
+```powershell
+curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/live
+curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/ready
+```
+
+Important: pushing a new `latest` image to ECR is not enough by itself. Always
+run `aws lambda update-function-code` so the production Lambda refreshes to the
+new image.
+
+### Local Changes Waiting For Deployment
+
+As of 2026-07-12 evening, AWS production is live but does not yet include the
+latest local changes. Pending deployment:
+
+- Eval baseline/timeline display counts baseline by signal days, not empty calendar days.
+- Dataset Simulation creates a fresh test user on every run.
+- Eval UI reordering and styling updates, loading animation, copyable AI prompt, and compact expandable Run results.
+- Local verification: `71 passed`.
+
+The Android frontend should use `/v1/auth/start`, `/v1/auth/verify`, and then
+the returned per-user token for `/v1/me` and `/v1/app/messages`. Do not put
+`SAFE_MIND_INTEGRATION_API_TOKEN` in the Android app; it is only for the
+legacy/internal backend integration endpoint `/v1/integrations/next/messages`.
 
 The repo is prepared for both AWS Lambda container deployment and ECS/Fargate.
 If Lambda is required, use `Dockerfile.lambda`, `safe_mind/lambda_handler.py`,

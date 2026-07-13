@@ -25,13 +25,19 @@ def test_eval_page_loads() -> None:
     response = client.get("/eval")
 
     assert response.status_code == 200
-    assert "SafeMind Pipeline Eval" in response.text
+    assert "Safe Mind Pipeline Eval" in response.text
     assert "Alert Dashboard" in response.text
     assert "Known users in local DB" in response.text
     assert "Current test user is synthetic but stored in the real local DB" in response.text
     assert "Dataset Simulation" in response.text
     assert "CSV columns: timestamp,message" in response.text
-    assert "Internal dataset simulation for historical monitoring" in response.text
+    assert "Dataset simulation for historical monitoring" in response.text
+    assert "Wanted alert days" in response.text
+    assert "prompt-copy-btn" in response.text
+    assert "Each run creates a fresh test user" in response.text
+    assert "child_user_id: null" in response.text
+    assert "local internal tool" not in response.text
+    assert "React dashboard" not in response.text
     assert "Request embedding preview" not in response.text
 
 
@@ -63,7 +69,7 @@ def test_eval_accepts_configured_basic_auth(monkeypatch) -> None:
     response = client.get("/eval", auth=("team", "secret"))
 
     assert response.status_code == 200
-    assert "SafeMind Pipeline Eval" in response.text
+    assert "Safe Mind Pipeline Eval" in response.text
 
 
 def test_eval_fails_closed_in_production_without_password(monkeypatch) -> None:

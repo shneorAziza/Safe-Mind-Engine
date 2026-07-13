@@ -181,7 +181,7 @@ We will do these together if Lambda is the required target:
 
 ## Current Step-By-Step Deployment Handoff
 
-The user is learning AWS and wants to proceed one completed step at a time.
+The user is learning AWS and wants to proceed one completed step at a time. As of 2026-07-12, the first API Lambda deployment is live behind API Gateway HTTP API.
 
 Completed:
 
@@ -189,19 +189,93 @@ Completed:
 - AWS CLI v2 is installed locally.
 - Root AWS Console login works.
 - Root MFA was completed.
+- AWS CLI profile `safe-mind-deploy` is configured in `us-east-1`.
+- IAM user `safe-mind-deploy` exists for deployment CLI access.
+- ECR repository `safe-mind-api` exists:
+  `415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api`.
+- Docker image was built from `Dockerfile.lambda`, rebuilt as `linux/amd64` with `--provenance=false`, pushed as `latest`, and verified as `application/vnd.docker.distribution.manifest.v2+json`.
+- IAM role `safe-mind-lambda-role` exists.
+- Lambda function `safe-mind-api` exists with `1024 MB` memory and `30 seconds` timeout.
+- Production Lambda env vars were added directly on the Lambda. Explicit non-secret values are intentionally minimal:
+  - `SAFE_MIND_ENV=production`
+  - `SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb`
+  - `SAFE_MIND_ENABLE_EVAL_UI=true`
+  - `SAFE_MIND_EVAL_AUTH_USERNAME=safemind`
+  - `SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert`
+- Production Lambda secret env vars are:
+  - `SAFE_MIND_MONGODB_URI`
+  - `OPENAI_API_KEY`
+  - `SAFE_MIND_EVAL_AUTH_PASSWORD`
+  - `SAFE_MIND_INTEGRATION_API_TOKEN`
+  - `SAFE_MIND_WHATSAPP_ACCESS_TOKEN`
+  - `SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID`
+- Lambda test events and public URL checks passed:
+  - `GET /health/live` returned `200`.
+  - `GET /health/ready` returned `200` with MongoDB storage `ok`.
+- A Lambda Function URL was created and worked for health checks, but it remapped `WWW-Authenticate` to `x-amzn-Remapped-www-authenticate`; browser login prompts for `/eval` did not open reliably.
+- API Gateway HTTP API was created and is the public production API base URL:
+  `https://qi86pazbij.execute-api.us-east-1.amazonaws.com`.
+- `/eval` is enabled for the team and protected by Basic Auth. PowerShell auth testing with the configured eval password returned `200`.
 - Bedrock was discussed and rejected as the active model path because the user
   wants to keep the exact existing model, OpenAI `gpt-4o-mini`.
 
+Current deploy status, 2026-07-12 evening:
+
+- AWS production is live but does not include the latest local changes.
+- The production Lambda still uses the previously pushed `latest` image until a new Docker image is built, pushed to ECR, and applied with `aws lambda update-function-code`.
+- Local-only changes waiting for deployment:
+  - Eval baseline/timeline display counts baseline by signal days, not empty calendar days.
+  - Dataset Simulation creates a fresh synthetic user for every run.
+  - React Eval UI reordering, blue/green action styling, colored tabs, loading animation, copyable dataset-generation prompt, and compact expandable Run result rows.
+  - README production redeploy instructions.
+- Last local verification after the local changes: `71 passed`.
+
+## Redeploy Existing Production Lambda
+
+Use this after local changes are ready to go live:
+
+```powershell
+aws ecr get-login-password --region us-east-1 --profile safe-mind-deploy `
+  | docker login --username AWS --password-stdin 415019015823.dkr.ecr.us-east-1.amazonaws.com
+
+docker buildx build --platform linux/amd64 --provenance=false `
+  -f Dockerfile.lambda `
+  -t safe-mind-api:latest .
+
+docker tag safe-mind-api:latest 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest
+docker push 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest
+
+aws lambda update-function-code `
+  --function-name safe-mind-api `
+  --image-uri 415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api:latest `
+  --region us-east-1 `
+  --profile safe-mind-deploy
+```
+
+Verify after deployment:
+
+```powershell
+curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/live
+curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/ready
+```
+
 Next step:
 
-1. In AWS Console, open `IAM`.
-2. Go to `Users`.
-3. Click `Create user`.
-4. Username: `safe-mind-deploy`.
-5. Do not enable Console access.
-6. Permissions: `Attach policies directly`.
-7. For the first deployment only, attach `AdministratorAccess`.
-8. Create the user, then stop and create an access key in the next guided step.
+1. Send the frontend engineer the API base URL:
+   `https://qi86pazbij.execute-api.us-east-1.amazonaws.com`.
+2. Do not send `SAFE_MIND_INTEGRATION_API_TOKEN` to the Android frontend. The Android app must call `/v1/auth/start`, then `/v1/auth/verify`, store the returned per-user token, and use that token for `/v1/me` and `/v1/app/messages`.
+3. Verify the API Gateway URL with the Android/frontend flow:
+   - `POST /v1/auth/start`
+   - `POST /v1/auth/verify`
+   - `GET /v1/me`
+   - `POST /v1/app/messages`
+4. Later, create the `safe-mind-finalizer` Lambda from the same image, override its image command to `safe_mind.lambda_finalizer.handler`, and schedule it with EventBridge.
+5. Reduce `safe-mind-deploy` permissions from broad `AdministratorAccess` after the first deployment is stable.
+
+Token distinction:
+
+- Android/frontend user token: generated by `POST /v1/auth/verify`, stored on the device, and sent as `Authorization: Bearer <token>` to `/v1/me` and `/v1/app/messages`.
+- `SAFE_MIND_INTEGRATION_API_TOKEN`: production secret for the legacy/internal backend-to-backend endpoint `POST /v1/integrations/next/messages`; not for client-side Android code.
 
 ## First AWS ECS Deployment Steps
 

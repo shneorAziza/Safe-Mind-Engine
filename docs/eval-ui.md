@@ -8,6 +8,9 @@ The Eval UI is an internal React page served by the backend. It is used to run l
 
 This is not part of the child app or parent app.
 
+2026-07-12 local update: the latest Eval UI improvements are implemented and
+tested locally, but are not deployed to AWS production yet.
+
 ## URL
 
 Run the backend and open:
@@ -30,6 +33,7 @@ Use **Dataset Simulation** for non-technical team evaluation.
 
 The user provides:
 
+- requested alert days used to generate a copyable AI prompt,
 - a CSV or JSON dataset of historical messages,
 - an optional external user ID,
 - a parent phone number for WhatsApp alerts,
@@ -37,12 +41,29 @@ The user provides:
 
 The backend then:
 
-1. creates a real synthetic child user ID when one is not provided,
+1. creates a fresh synthetic child user ID for each Dataset Simulation run,
 2. stores the external user mapping,
 3. processes every message through the configured live pipeline,
 4. persists daily signal scores into the configured signal store,
 5. finalizes every day represented in the dataset,
 6. returns the full dashboard timeline and per-day alert decisions.
+
+Important: Dataset Simulation intentionally does not reuse the selected
+dashboard child user. This prevents a new pasted CSV from merging into previous
+Eval runs and changing message counts or daily averages unexpectedly.
+
+The existing-user dashboard loader remains available below Dataset Simulation.
+Use it only when inspecting a previously created child user.
+
+## Current React UI Behavior
+
+- Dataset Simulation appears first in the left sidebar.
+- Existing-user dashboard loading appears below it.
+- Run actions are green; Dashboard/load actions are blue; the top tabs match.
+- During dataset runs or dashboard loads, the main content area shows a large animated loading state.
+- The AI dataset prompt is displayed as a copyable code-style block.
+- Run results use compact clickable rows. Click a day to open details for daily metrics, baseline metrics, delivery status, max streak, and the decision reason.
+- `Max streak = 3` is not sufficient by itself. An alert requires at least 3 different metrics to each reach a 3-day streak on the same finalized day.
 
 ## CSV Format
 
@@ -110,7 +131,7 @@ The current alert engine is not triggered by one severe message alone.
 
 The engine requires:
 
-- baseline calibration from the first 10 signal days,
+- baseline calibration from the first 10 signal days; empty calendar days do not count,
 - daily deviations from that personal baseline,
 - at least 3 different metrics,
 - each of those metrics must repeat as a deviation for 3 consecutive days,
@@ -145,7 +166,7 @@ Expected alert decision days for that pattern:
 - `2026-01-19`
 - `2026-01-26`
 
-Model scoring can still move outcomes when OpenAI analysis is used. If no alert appears, inspect the dashboard's per-day metric scores and confirm the same 3 metrics are deviating for 3 consecutive days.
+Model scoring can still move outcomes when OpenAI analysis is used. If no alert appears, inspect the Run details or dashboard per-day metric scores and confirm the same 3 metrics are deviating for 3 consecutive days.
 
 ## API
 

@@ -155,7 +155,7 @@ Files:
 
 After the calendar day closes, the finalization flow evaluates the child's alert state:
 
-- fixed baseline from the first 10 calendar days
+- fixed baseline from the first 10 signal days; empty calendar days do not count
 - daily vector from that day's compact psychological scores
 - baseline vector from the average baseline-day scores
 - per-metric deviation thresholds

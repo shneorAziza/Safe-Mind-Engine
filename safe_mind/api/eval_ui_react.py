@@ -4,7 +4,7 @@ EVAL_HTML = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SafeMind Pipeline Eval</title>
+  <title>Safe Mind Pipeline Eval</title>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <style>
@@ -144,6 +144,14 @@ EVAL_HTML = """
       gap: 10px;
     }
     .sidebar-section + .sidebar-section { border-top: 1px solid var(--line); }
+    .sidebar-section-run {
+      background: linear-gradient(180deg, #f2fbf7 0%, #ffffff 38%);
+      border-left: 4px solid var(--accent);
+    }
+    .sidebar-section-dashboard {
+      background: linear-gradient(180deg, #f5f7ff 0%, #ffffff 42%);
+      border-left: 4px solid #4f66b0;
+    }
     .section-head {
       display: flex;
       align-items: start;
@@ -175,6 +183,47 @@ EVAL_HTML = """
       font-size: 12px;
       line-height: 1.4;
     }
+    .prompt-card {
+      position: relative;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #eef0f2;
+      overflow: hidden;
+    }
+    .prompt-code {
+      margin: 0;
+      max-height: 210px;
+      overflow: auto;
+      padding: 38px 12px 12px;
+      background: transparent;
+      color: #111827;
+      border-radius: 0;
+      font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      direction: ltr;
+      text-align: left;
+      white-space: pre-wrap;
+      word-break: normal;
+    }
+    .prompt-copy-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      min-height: 28px;
+      border: 1px solid #c7ccd3;
+      background: #fff;
+      color: #344054;
+      padding: 0 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 780;
+      box-shadow: 0 1px 2px rgba(24, 33, 47, 0.08);
+    }
+    .prompt-copy-btn:hover {
+      background: #f8fafb;
+      color: #18212f;
+    }
     .switch-list { display: grid; gap: 6px; }
     .switch {
       display: flex;
@@ -200,6 +249,12 @@ EVAL_HTML = """
       font-size: 12px;
     }
     .hint strong { display: block; margin-bottom: 2px; color: #0e372d; }
+    .hint-dashboard {
+      border-color: #c5ccef;
+      background: #f4f6ff;
+      color: #344078;
+    }
+    .hint-dashboard strong { color: #27315f; }
     .error {
       margin: 0 14px 14px;
       border: 1px solid #efb4b8;
@@ -246,6 +301,14 @@ EVAL_HTML = """
     }
     .tab:hover { background: #eef2f5; color: var(--ink); }
     .tab-active, .tab-active:hover { background: var(--ink); color: #fff; }
+    .tab-dashboard.tab-active, .tab-dashboard.tab-active:hover { background: #4f66b0; color: #fff; }
+    .tab-run.tab-active, .tab-run.tab-active:hover { background: var(--accent); color: #fff; }
+    .tab-dashboard:not(.tab-active) { color: #4f66b0; }
+    .tab-run:not(.tab-active) { color: var(--accent); }
+    .button-run { background: var(--accent); }
+    .button-run:hover { background: var(--accent-strong); }
+    .button-dashboard { background: #4f66b0; }
+    .button-dashboard:hover { background: #3d508f; }
     .content {
       min-height: 0;
       overflow: auto;
@@ -253,6 +316,71 @@ EVAL_HTML = """
       display: grid;
       align-content: start;
       gap: 14px;
+    }
+    .loading-state {
+      min-height: 420px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background:
+        radial-gradient(circle at 50% 38%, rgba(22, 116, 95, 0.08), transparent 28%),
+        #fbfcfd;
+    }
+    .loading-card {
+      display: grid;
+      justify-items: center;
+      gap: 14px;
+      color: #344054;
+      text-align: center;
+      padding: 26px;
+    }
+    .signal-loader {
+      position: relative;
+      width: 112px;
+      height: 112px;
+    }
+    .signal-loader-ring {
+      position: absolute;
+      inset: 0;
+      border: 2px solid rgba(22, 116, 95, 0.14);
+      border-top-color: var(--accent);
+      border-radius: 999px;
+      animation: spin 1.15s linear infinite;
+    }
+    .signal-loader-ring:nth-child(2) {
+      inset: 16px;
+      border-top-color: #4f66b0;
+      animation-duration: 1.75s;
+      animation-direction: reverse;
+    }
+    .signal-loader-dot {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 14px;
+      height: 14px;
+      border-radius: 999px;
+      background: var(--accent);
+      transform: translate(-50%, -50%);
+      animation: pulse 1.25s ease-in-out infinite;
+    }
+    .loading-title {
+      font-size: 17px;
+      font-weight: 820;
+      color: var(--ink);
+    }
+    .loading-subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 420px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(22, 116, 95, 0.28); }
+      50% { box-shadow: 0 0 0 18px rgba(22, 116, 95, 0); }
     }
     .pill-row { display: flex; flex-wrap: wrap; gap: 7px; }
     .pill, .badge {
@@ -512,6 +640,7 @@ EVAL_HTML = """
       const [datasetFormat, setDatasetFormat] = useState("csv");
       const [uid, setUid] = useState("");
       const [parentPhone, setParentPhone] = useState("");
+      const [alertDays, setAlertDays] = useState("2026-01-17, 2026-01-24");
       const [sendAlerts, setSendAlerts] = useState(false);
       const [activeView, setActiveView] = useState("dashboard");
       const [runData, setRunData] = useState(null);
@@ -580,7 +709,7 @@ EVAL_HTML = """
             body: JSON.stringify({
               dataset_text: datasetText,
               dataset_format: datasetFormat,
-              child_user_id: childUserId.trim() || null,
+              child_user_id: null,
               uid: uid.trim() || null,
               parent_phone: parentPhone.trim() || null,
               send_alerts: sendAlerts,
@@ -610,28 +739,24 @@ EVAL_HTML = """
             h("div", { className: "brand" },
               h("div", { className: "brand-mark" }, "SM"),
               h("div", null,
-                h("h1", null, "SafeMind Pipeline Eval"),
+                h("h1", null, "Safe Mind Pipeline Eval"),
                 h("p", { className: "subtle" },
-                  "Internal dataset simulation for historical monitoring, daily flags, and parent-alert decisions."
+                  "Dataset simulation for historical monitoring, daily flags, and parent-alert decisions."
                 )
               )
-            ),
-            h("div", { className: "pill-row" },
-              h(Pill, { label: "local internal tool" }),
-              h(Pill, { label: "React dashboard" })
             )
           )
         ),
         h("main", { className: "layout" },
           h("aside", { className: "sidebar" },
-            h(DashboardControls, {
-              knownUsers, childUserId, setChildUserId, startDay, setStartDay,
-              timelineDays, setTimelineDays, loadingTimeline, loadTimeline
-            }),
             h(PipelineControls, {
               datasetText, setDatasetText, datasetFormat, setDatasetFormat,
               uid, setUid, parentPhone, setParentPhone, sendAlerts, setSendAlerts,
-              loadingRun, runEval
+              alertDays, setAlertDays, loadingRun, runEval
+            }),
+            h(DashboardControls, {
+              knownUsers, childUserId, setChildUserId, startDay, setStartDay,
+              timelineDays, setTimelineDays, loadingTimeline, loadTimeline
             }),
             error ? h("div", { className: "error" }, error) : null
           ),
@@ -642,14 +767,24 @@ EVAL_HTML = """
                 h("p", { className: "subtle" }, "Fixed baseline, daily drift, gate decisions, and alert delivery status.")
               ),
               h("div", { className: "tabs" },
-                h(TabButton, { active: activeView === "dashboard", onClick: () => setActiveView("dashboard") }, "Dashboard"),
-                h(TabButton, { active: activeView === "summary", onClick: () => setActiveView("summary") }, "Run")
+                h(TabButton, { active: activeView === "dashboard", tone: "dashboard", onClick: () => setActiveView("dashboard") }, "Dashboard"),
+                h(TabButton, { active: activeView === "summary", tone: "run", onClick: () => setActiveView("summary") }, "Run")
               )
             ),
             h("div", { className: "content" },
-              activeView === "dashboard"
-                ? h(AlertDashboard, { data: timelineData })
-                : h(DatasetResults, { data: runData })
+              loadingRun
+                ? h(LoadingState, {
+                    title: "Running dataset simulation",
+                    subtitle: "Analyzing messages, rebuilding baseline state, finalizing days, and checking alert gates."
+                  })
+                : loadingTimeline
+                  ? h(LoadingState, {
+                      title: "Loading alert dashboard",
+                      subtitle: "Fetching stored signal days and rebuilding the monitoring timeline."
+                    })
+                  : activeView === "dashboard"
+                    ? h(AlertDashboard, { data: timelineData })
+                    : h(DatasetResults, { data: runData })
             )
           )
         )
@@ -657,14 +792,14 @@ EVAL_HTML = """
     }
 
     function DashboardControls(props) {
-      return h("div", { className: "sidebar-section" },
+      return h("div", { className: "sidebar-section sidebar-section-dashboard" },
         h("div", { className: "section-head" },
           h("div", null,
             h("h2", null, "Alert Dashboard"),
             h("p", { className: "subtle" }, "Load the last 30 days for any stored child user.")
           )
         ),
-        h("div", { className: "hint" },
+        h("div", { className: "hint hint-dashboard" },
           h("strong", null, "How to monitor"),
           "Current test user is synthetic but stored in the real local DB. Choose the user, keep Timeline start empty, and load the last 30 days."
         ),
@@ -706,23 +841,51 @@ EVAL_HTML = """
             })
           )
         ),
-        h("button", { type: "button", disabled: props.loadingTimeline, onClick: () => props.loadTimeline() },
+        h("button", { type: "button", className: "button-dashboard", disabled: props.loadingTimeline, onClick: () => props.loadTimeline() },
           props.loadingTimeline ? "Loading..." : "Load Dashboard"
         )
       );
     }
 
     function PipelineControls(props) {
-      return h("div", { className: "sidebar-section" },
+      const promptText = buildDatasetPrompt(props.alertDays);
+      const [promptCopied, setPromptCopied] = useState(false);
+
+      async function handleCopyPrompt() {
+        await copyText(promptText);
+        setPromptCopied(true);
+        window.setTimeout(() => setPromptCopied(false), 1400);
+      }
+
+      return h("div", { className: "sidebar-section sidebar-section-run" },
         h("div", { className: "section-head" },
           h("div", null,
             h("h2", null, "Dataset Simulation"),
             h("p", { className: "subtle" }, "Run historical messages through the real monitoring pipeline.")
           )
         ),
+        h(Field, { label: "Wanted alert days" },
+          h("input", {
+            type: "text",
+            value: props.alertDays,
+            placeholder: "2026-01-17, 2026-01-24",
+            onChange: (event) => props.setAlertDays(event.target.value)
+          })
+        ),
         h("div", { className: "hint" },
-          h("strong", null, "Dataset format"),
-          "CSV columns: timestamp,message. JSON can be an array of objects with timestamp and message."
+          h("strong", null, "Generate a long dataset with AI"),
+          "Copy this prompt into your AI tool, then paste the CSV it returns into Historical dataset. Each run creates a fresh test user."
+        ),
+        h("div", { className: "field" },
+          h("label", null, "Prompt to copy"),
+          h("div", { className: "prompt-card" },
+            h("button", {
+              type: "button",
+              className: "prompt-copy-btn",
+              onClick: handleCopyPrompt
+            }, promptCopied ? "Copied" : "Copy"),
+            h("pre", { className: "prompt-code" }, promptText)
+          )
         ),
         h("div", { className: "dataset-meta-grid" },
           h(Field, { label: "Format" },
@@ -742,6 +905,10 @@ EVAL_HTML = """
               onChange: (event) => props.setParentPhone(event.target.value)
             })
           )
+        ),
+        h("div", { className: "hint" },
+          h("strong", null, "Dataset format"),
+          "CSV columns: timestamp,message. JSON can be an array of objects with timestamp and message."
         ),
         h(Field, { label: "External user ID" },
           h("input", {
@@ -765,10 +932,62 @@ EVAL_HTML = """
             label: "Send WhatsApp alerts for alert days"
           })
         ),
-        h("button", { type: "button", disabled: props.loadingRun, onClick: props.runEval },
+        h("button", { type: "button", className: "button-run", disabled: props.loadingRun, onClick: props.runEval },
           props.loadingRun ? "Running..." : "Run Dataset"
         )
       );
+    }
+
+    function LoadingState({ title, subtitle }) {
+      return h("div", { className: "loading-state" },
+        h("div", { className: "loading-card" },
+          h("div", { className: "signal-loader", "aria-hidden": "true" },
+            h("div", { className: "signal-loader-ring" }),
+            h("div", { className: "signal-loader-ring" }),
+            h("div", { className: "signal-loader-dot" })
+          ),
+          h("div", { className: "loading-title" }, title),
+          h("div", { className: "loading-subtitle" }, subtitle)
+        )
+      );
+    }
+
+    function buildDatasetPrompt(alertDays) {
+      const daysText = String(alertDays || "").trim() || "choose 1-2 monitoring days after the baseline";
+      return [
+        "Create a Safe Mind evaluation CSV dataset.",
+        "",
+        "Output only CSV text, with exactly these columns:",
+        "timestamp,message",
+        "",
+        "Requirements:",
+        "- Use one child/teen voice, realistic short messages, no explanations.",
+        "- Create at least 10 baseline signal days before any alert day.",
+        "- Baseline days should be emotionally normal or mildly positive.",
+        "- A baseline day counts only if it has at least one message.",
+        "- To trigger an alert, create 3 consecutive message days ending on each requested alert day.",
+        "- On every one of those 3 consecutive trigger days, every message must clearly repeat at least these 4 dimensions: loneliness, anxiety/stress, hopelessness, and low self-worth.",
+        "- Use explicit, unmistakable wording for trigger days, such as: I feel completely alone, I cannot calm down, nothing will get better, I feel worthless.",
+        "- Do not make trigger-day messages subtle, mixed, hopeful, or resolved. They must stay consistently concerning across all 3 days.",
+        "- If there is more than one requested alert day, add at least 2 calm recovery message days after the first alert streak before starting the next 3-day alert streak.",
+        "- Keep messages non-graphic and non-instructional.",
+        "- Include 1-3 messages per message day.",
+        "- Use ISO-like timestamps such as 2026-01-03 09:15.",
+        "- Use exactly the requested alert days as the 3rd day of each trigger streak. For example, if 2026-01-17 is requested, make 2026-01-15, 2026-01-16, and 2026-01-17 the 3 consecutive trigger days.",
+        "- Do not create extra severe days during the 10-day baseline.",
+        "",
+        `Requested alert days: ${daysText}`,
+        "",
+        "Make sure the CSV is long enough for Safe Mind: 10 baseline days first, then the exact 3-day streaks needed for the requested alert days, with recovery days between separate alert streaks."
+      ].join("\\n");
+    }
+
+    async function copyText(value) {
+      try {
+        await navigator.clipboard.writeText(value);
+      } catch (_) {
+        return;
+      }
     }
 
     function AlertDashboard({ data }) {
@@ -828,7 +1047,7 @@ EVAL_HTML = """
               key: `${day.day}-row`,
               day,
               selected,
-              onSelect: () => setSelectedDay(day)
+              onSelect: () => setSelectedDay((current) => current?.day === day.day ? null : day)
             });
             if (!selected) return [row];
             return [
@@ -901,7 +1120,14 @@ EVAL_HTML = """
       if (!data) return h("div", { className: "empty" }, "No dataset run yet.");
       const runtime = data.runtime || {};
       const finalized = data.finalized_days || [];
+      const timelineDays = data.timeline?.days || [];
+      const finalizedByDay = Object.fromEntries(finalized.map((item) => [item.day, item]));
       const dryRunAlerts = finalized.filter((item) => item.alert_delivery === "dry_run").length;
+      const baselineDays = timelineDays.filter((day) => day.phase === "baseline").length;
+      const monitoringDays = timelineDays.filter((day) => day.phase === "monitoring").length;
+      const deviationDays = timelineDays.filter((day) => day.is_deviation).length;
+      const pushDays = timelineDays.filter((day) => day.should_send_push).length;
+      const maxStreak = timelineDays.reduce((max, day) => Math.max(max, day.deviations_in_window || 0), 0);
 
       return h(React.Fragment, null,
         h("div", { className: "pill-row" },
@@ -909,7 +1135,8 @@ EVAL_HTML = """
           h(Pill, { label: `child: ${data.child_user_id}` }),
           h(Pill, { label: `uid: ${data.uid}` }),
           h(Pill, { label: `${data.start_day} to ${data.end_day}` }),
-          h(Pill, { label: `alert days: ${data.alerts_to_send}` }),
+          h(Pill, { label: `flagged days: ${deviationDays}` }),
+          h(Pill, { label: `push days: ${pushDays}` }),
           h(Pill, { label: `dry-run alerts: ${dryRunAlerts}` }),
           h(Pill, { label: `sent: ${data.whatsapp_sent}` }),
           h(Pill, { label: `skipped: ${data.whatsapp_skipped}` }),
@@ -919,30 +1146,107 @@ EVAL_HTML = """
         h("div", { className: "panel-block" },
           h("div", { className: "hint" },
             h("strong", null, "Run complete"),
-            "The dataset was persisted as a real child user, every message passed through the configured pipeline, and each message day was finalized for alert decisions."
+            pushDays
+              ? "At least one day reached the alert gate. If sending was enabled and a parent phone was provided, delivery appears in the table below."
+              : "No alert was sent. A max streak of 3 is not enough by itself; Safe Mind requires 3 different metrics to each reach a 3-day streak on the same day."
           ),
           h("div", { className: "metric-grid" },
             h(Metric, { label: "Messages processed", value: data.count }),
-            h(Metric, { label: "Days finalized", value: finalized.length }),
-            h(Metric, { label: "Alert decisions", value: data.alerts_to_send }),
+            h(Metric, { label: "Baseline days", value: baselineDays }),
+            h(Metric, { label: "Monitoring days", value: monitoringDays }),
+            h(Metric, { label: "Flagged days", value: deviationDays })
+          ),
+          h("div", { className: "metric-grid" },
+            h(Metric, { label: "Max streak", value: maxStreak }),
+            h(Metric, { label: "Push days", value: pushDays }),
+            h(Metric, { label: "Dry-run alerts", value: dryRunAlerts }),
             h(Metric, { label: "WhatsApp sent", value: data.whatsapp_sent })
           )
         ),
-        h("div", { className: "timeline-wrap" },
-          h("table", null,
-            h("thead", null,
-              h("tr", null, ["Day", "Decision", "Messages", "Delivery", "Reason"].map((head) => h("th", { key: head }, head)))
-            ),
-            h("tbody", null, finalized.map((item) => {
-              const decision = item.decision || {};
-              return h("tr", { key: item.day },
-                h("td", null, item.day),
-                h("td", null, decision.should_send_push ? h(Badge, { tone: "alert" }, "alert") : h(Badge, { tone: "ok" }, "hold")),
-                h("td", null, decision.message_count ?? 0),
-                h("td", null, h(DeliveryBadge, { delivery: item.alert_delivery })),
-                h("td", null, decision.reason || "n/a")
-              );
-            }))
+        h(RunTimelineTable, { days: timelineDays, finalizedByDay })
+      );
+    }
+
+    function RunTimelineTable({ days, finalizedByDay }) {
+      const [selectedDay, setSelectedDay] = useState(days.find((day) => day.should_send_push) || days.find((day) => day.is_deviation) || days[0]);
+      const selectedKey = selectedDay ? selectedDay.day : null;
+      return h("div", { className: "timeline-wrap" },
+        h("table", null,
+          h("thead", null,
+            h("tr", null,
+              ["Day", "Phase", "Msgs", "Flag", "Streak", "Push", "Delivery"]
+                .map((head) => h("th", { key: head }, head))
+            )
+          ),
+          h("tbody", null, days.flatMap((day) => {
+            const selected = day.day === selectedKey;
+            const finalizedDay = finalizedByDay[day.day] || {};
+            const delivery = finalizedDay.alert_delivery || "not_needed";
+            const row = h(RunTimelineRow, {
+              key: `${day.day}-row`,
+              day,
+              delivery,
+              selected,
+              onSelect: () => setSelectedDay((current) => current?.day === day.day ? null : day)
+            });
+            if (!selected) return [row];
+            return [
+              row,
+              h("tr", { key: `${day.day}-detail`, className: "detail-row" },
+                h("td", { className: "detail-cell", colSpan: 7 },
+                  h(RunDayDetailPanel, { day, delivery })
+                )
+              )
+            ];
+          }))
+        )
+      );
+    }
+
+    function RunTimelineRow({ day, delivery, selected, onSelect }) {
+      const toneClass = day.should_send_push
+        ? "row-push"
+        : day.is_deviation
+          ? "row-deviation"
+          : day.phase === "baseline"
+            ? "row-baseline"
+            : "";
+      const className = `${toneClass}${selected ? " row-selected" : ""}`.trim();
+      return h("tr", { className, onClick: onSelect, tabIndex: 0, onKeyDown: (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect();
+        }
+      }},
+        h("td", null, day.day),
+        h("td", null, h(PhaseBadge, { phase: day.phase })),
+        h("td", null, day.message_count ?? 0),
+        h("td", null, day.is_deviation ? h(Badge, { tone: "warn" }, "flag") : h(Badge, { tone: "ok" }, "clear")),
+        h("td", null, day.deviations_in_window ?? 0),
+        h("td", null, day.should_send_push ? h(Badge, { tone: "alert" }, "send") : h(Badge, { tone: "ok" }, "hold")),
+        h("td", null, h(DeliveryBadge, { delivery }))
+      );
+    }
+
+    function RunDayDetailPanel({ day, delivery }) {
+      return h("section", { className: "detail-panel" },
+        h("div", { className: "detail-head" },
+          h("h3", null, `Run detail: ${day.day}`),
+          h("div", { className: "pill-row" },
+            h(PhaseBadge, { phase: day.phase }),
+            day.is_deviation ? h(Badge, { tone: "warn" }, "flagged") : h(Badge, { tone: "ok" }, "clear"),
+            day.should_send_push ? h(Badge, { tone: "alert" }, "push") : h(Badge, { tone: "ok" }, "hold"),
+            h(DeliveryBadge, { delivery })
+          )
+        ),
+        h("div", { className: "detail-grid" },
+          h(DetailCard, { title: "Daily metrics" }, h(ScoreList, { scores: day.scores })),
+          h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
+          h(DetailCard, { title: "Decision" },
+            h("div", { className: "detail-value" }, `Messages: ${day.message_count}`),
+            h("div", { className: "detail-value" }, `Max metric streak: ${day.deviations_in_window}`),
+            h("div", { className: "detail-value" }, `Delivery: ${delivery}`),
+            h("div", { className: "detail-value" }, day.reason || "n/a")
           )
         )
       );
@@ -1061,8 +1365,8 @@ EVAL_HTML = """
       );
     }
 
-    function TabButton({ active, onClick, children }) {
-      return h("button", { type: "button", className: `tab${active ? " tab-active" : ""}`, onClick }, children);
+    function TabButton({ active, tone, onClick, children }) {
+      return h("button", { type: "button", className: `tab tab-${tone || "default"}${active ? " tab-active" : ""}`, onClick }, children);
     }
 
     function Pill({ label }) {

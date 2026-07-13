@@ -1,7 +1,11 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from safe_mind.alerts.engine import compute_daily_signal_scores, rebuild_daily_alert_state
+from safe_mind.alerts.engine import (
+    build_alert_timeline,
+    compute_daily_signal_scores,
+    rebuild_daily_alert_state,
+)
 from safe_mind.storage.models import DailySignalRecord
 
 
@@ -109,6 +113,31 @@ def test_rebuild_daily_alert_state_waits_for_ten_baseline_days() -> None:
     assert baseline_score is None
     assert rebuilt[-1].should_send_alert is False
     assert rebuilt[-1].alert_reason == "insufficient_baseline"
+
+
+def test_alert_timeline_counts_baseline_only_on_signal_days() -> None:
+    start = datetime(2026, 1, 3, 9, tzinfo=UTC)
+    records = [
+        _record(start, negative_emotion=8, message_count=2),
+        _record(datetime(2026, 1, 4, 8, tzinfo=UTC), negative_emotion=2),
+        _record(datetime(2026, 1, 14, 21, tzinfo=UTC), negative_emotion=8),
+    ]
+
+    timeline = build_alert_timeline(
+        child_user_id=CHILD_ID,
+        records=records,
+        start_day=datetime(2026, 1, 2, tzinfo=UTC).date(),
+        end_day=datetime(2026, 1, 14, tzinfo=UTC).date(),
+    )
+    days = {item.day.isoformat(): item for item in timeline}
+
+    assert days["2026-01-02"].phase == "pre_baseline"
+    assert days["2026-01-03"].phase == "baseline"
+    assert days["2026-01-04"].phase == "baseline"
+    assert days["2026-01-05"].phase == "pre_baseline"
+    assert days["2026-01-13"].phase == "pre_baseline"
+    assert days["2026-01-14"].phase == "baseline"
+    assert len([item for item in timeline if item.phase == "baseline"]) == 3
 
 
 def _record(

@@ -131,7 +131,7 @@ The internal alert engine now works over compact stored psychological scores.
 
 Current policy:
 
-- first 10 calendar days form a fixed personal baseline
+- first 10 signal days form a fixed personal baseline; empty calendar days do not count
 - each day gets a metric vector from that day's compact psychological scores
 - baseline vector is the average vector during the baseline window
 - a deviation is based on per-metric thresholds from baseline

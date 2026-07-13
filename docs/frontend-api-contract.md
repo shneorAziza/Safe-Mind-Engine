@@ -13,7 +13,7 @@ http://127.0.0.1:8000
 Production:
 
 ```text
-<production-api-url>
+https://qi86pazbij.execute-api.us-east-1.amazonaws.com
 ```
 
 All request and response bodies are JSON.
@@ -30,6 +30,8 @@ Content-Type: application/json
 ```
 
 The token should be stored by the frontend and reused for future requests.
+
+Do not use `SAFE_MIND_INTEGRATION_API_TOKEN` in the Android app. That token is a server-side/internal integration secret for `POST /v1/integrations/next/messages`, not a frontend user token.
 
 ## 1. Start Registration/Login
 
@@ -363,3 +365,5 @@ GET /metrics
 
 The Eval endpoints are enabled for the team on the production API Lambda and require Basic Auth.
 They are internal tools and must not be called by the frontend app.
+
+`POST /v1/integrations/next/messages` requires `SAFE_MIND_INTEGRATION_API_TOKEN` and is only for backend-to-backend legacy integration/testing. Do not embed that secret in Android or any client-side app.

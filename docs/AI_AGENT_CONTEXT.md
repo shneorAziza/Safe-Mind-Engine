@@ -59,9 +59,42 @@ Deployment handoff update, 2026-07-12:
 - Docker Desktop is installed and open.
 - AWS CLI v2 is installed and `aws --version` returned `aws-cli/2.35.21 Python/3.14.6 Windows/11 exe/AMD64`.
 - The user signed in to AWS Console with root email/password and completed root MFA.
-- The next AWS Console step is creating an IAM user named `safe-mind-deploy` for CLI deployment access.
+- AWS CLI profile `safe-mind-deploy` exists and is configured for `us-east-1`.
+- IAM deploy user `safe-mind-deploy` exists. It was given `AdministratorAccess` for the first deployment only.
+- ECR repository `safe-mind-api` exists at `415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api`.
+- Lambda image `safe-mind-api:latest` was built from `Dockerfile.lambda`, rebuilt for `linux/amd64` with `--provenance=false`, pushed to ECR, and verified with manifest media type `application/vnd.docker.distribution.manifest.v2+json`.
+- IAM role `safe-mind-lambda-role` exists.
+- Lambda function `safe-mind-api` exists, uses the ECR image, has `1024 MB` memory and `30 seconds` timeout.
+- API Gateway HTTP API is now the public production URL: `https://qi86pazbij.execute-api.us-east-1.amazonaws.com`.
+- Earlier Lambda Function URL `https://afucqyhyawil7snm5isif4wspq0tsndw.lambda-url.us-east-1.on.aws/` worked for health checks, but remapped `WWW-Authenticate` to `x-amzn-Remapped-www-authenticate`, so browser Basic Auth prompts did not open reliably for `/eval`. Prefer API Gateway HTTP API for the public URL.
+- `/health/live` and `/health/ready` work from the public API URL. `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.
+- `/eval` is enabled in production and is protected by Basic Auth. PowerShell verification with an `Authorization: Basic ...` header returned `200`.
+- The current Lambda environment intentionally uses a minimal set of explicit variables plus secrets:
+  - `SAFE_MIND_ENV=production`
+  - `SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb`
+  - `SAFE_MIND_ENABLE_EVAL_UI=true`
+  - `SAFE_MIND_EVAL_AUTH_USERNAME=safemind`
+  - `SAFE_MIND_WHATSAPP_TEMPLATE_NAME=safe_mind_parent_alert`
+  - `SAFE_MIND_MONGODB_URI=<secret>`
+  - `OPENAI_API_KEY=<secret>`
+  - `SAFE_MIND_EVAL_AUTH_PASSWORD=<secret>`
+  - `SAFE_MIND_INTEGRATION_API_TOKEN=<secret>`
+  - `SAFE_MIND_WHATSAPP_ACCESS_TOKEN=<secret>`
+  - `SAFE_MIND_WHATSAPP_PHONE_NUMBER_ID=<secret>`
+- For the Android frontend, do not share `SAFE_MIND_INTEGRATION_API_TOKEN`. Android should use `/v1/auth/start`, `/v1/auth/verify`, then store and send the returned per-user token to `/v1/me`, `/v1/app/messages`, etc.
+- `SAFE_MIND_INTEGRATION_API_TOKEN` is only for the legacy/internal backend-to-backend endpoint `POST /v1/integrations/next/messages`, which is not the current Android frontend flow.
 - Active production model provider must stay OpenAI using `gpt-4o-mini`; do not switch the active deployment path to Bedrock/Claude.
 - Bedrock support exists in code as an optional future provider, but it is not the current production configuration.
+
+Local-only handoff update, 2026-07-12 evening:
+
+- The AWS production Lambda is still running the previously deployed ECR image. The changes below are local only until a new image is built, pushed to ECR, and applied with `aws lambda update-function-code`.
+- `README.md` now documents the production redeploy flow: Docker build, ECR push, Lambda code update, and public health verification.
+- Eval timeline baseline display now counts baseline by signal days, not empty calendar days. Empty days before the baseline is complete remain `pre_baseline`.
+- React Eval Dataset Simulation now creates a fresh synthetic test user on every run instead of reusing the currently selected dashboard child user. This prevents mixed message counts and daily averages between Eval runs.
+- React Eval UI changes are local only: `Safe Mind` title, Dataset Simulation first, existing-user dashboard loader second, Run green / Dashboard blue styling, matching colored tabs, large loading animation, copyable AI dataset prompt, fresh-user note, and compact clickable Run result rows with expandable details.
+- Run result guidance now clarifies that `Max streak = 3` alone is not enough. The alert gate requires at least 3 different metrics to each have a 3-day streak on the same finalized day.
+- Local verification after these changes: `71 passed`.
 
 ## Psychological Metrics
 
@@ -95,7 +128,9 @@ No raw text, redacted text, model summary, quote, or evidence phrase is stored.
 
 ## Baseline and Alert Logic
 
-The first 10 calendar days form the user's fixed baseline.
+The first 10 signal days form the user's fixed baseline. A signal day means a
+calendar day with at least one accepted message; empty calendar days do not
+advance baseline calibration.
 
 The baseline is a vector of metric averages, not one scalar number:
 
@@ -111,7 +146,7 @@ baseline_scores = {
 }
 ```
 
-From day 11 onward, each daily metric vector is compared with the baseline vector.
+From signal day 11 onward, each daily metric vector is compared with the baseline vector.
 
 A day is flagged when at least one metric deviates from baseline by its configured threshold. The system tracks a separate consecutive-day counter per metric, and sets `should_send_alert=true` only when at least 3 different metrics have each reached a 3-day consecutive deviation streak on the same finalized day.
 
@@ -385,7 +420,7 @@ Run tests:
 Current expected result:
 
 ```text
-70 passed
+71 passed
 ```
 
 ## Privacy Rules
@@ -415,8 +450,8 @@ Allowed storage:
 3. No first-stage filtering in the active pilot flow.
 4. Every message is privacy-redacted and then analyzed.
 5. Each user/day has one daily metric document.
-6. The first 10 days create a fixed vector baseline.
-7. Day 11 onward is compared against that baseline.
+6. The first 10 signal days create a fixed vector baseline.
+7. Signal day 11 onward is compared against that baseline.
 8. Three consecutive finalized flagged days create an alert decision.
 9. Alert reasons are deterministic metric deltas, not model-written prose.
 10. The system does not make diagnoses and does not expose raw child text.
