@@ -5,7 +5,7 @@
     "ImageUri": "<account-id>.dkr.ecr.<region>.amazonaws.com/safe-mind-api:<image-tag>"
   },
   "Role": "arn:aws:iam::<account-id>:role/safe-mind-lambda-role",
-  "Timeout": 30,
+  "Timeout": 900,
   "MemorySize": 1024,
   "Environment": {
     "Variables": {

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import secrets
+from threading import Thread
 from io import StringIO
 from datetime import UTC, date, datetime, time, timedelta
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -137,6 +139,22 @@ class EvalDatasetRunResponse(BaseModel):
     timeline: EvalAlertTimelineResponse
 
 
+class EvalDatasetJobStartResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "succeeded", "failed"]
+    total_messages: int
+
+
+class EvalDatasetJobStatusResponse(BaseModel):
+    job_id: str
+    status: Literal["queued", "running", "succeeded", "failed"]
+    total_messages: int
+    processed_messages: int
+    stage: str
+    error: str | None = None
+    result: EvalDatasetRunResponse | None = None
+
+
 class EvalAlertUsersResponse(BaseModel):
     users: list[UUID]
 
@@ -198,12 +216,90 @@ def run_eval(payload: EvalRunRequest) -> EvalRunResponse:
 
 @router.post("/eval/datasets/run", response_model=EvalDatasetRunResponse)
 def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
+    return _run_eval_dataset(payload)
+
+
+@router.post("/eval/datasets/jobs", response_model=EvalDatasetJobStartResponse, status_code=202)
+def start_eval_dataset_job(payload: EvalDatasetRunRequest) -> EvalDatasetJobStartResponse:
+    messages = _dataset_messages(payload)
+    store = _get_eval_signal_store()
+    job_id = str(uuid4())
+    store.create_eval_dataset_job(
+        job_id=job_id,
+        request_json=payload.model_dump(mode="json"),
+        total_messages=len(messages),
+    )
+    _submit_eval_dataset_job(job_id)
+    job = store.get_eval_dataset_job(job_id) or {}
+    return EvalDatasetJobStartResponse(
+        job_id=job_id,
+        status=job.get("status", "queued"),
+        total_messages=len(messages),
+    )
+
+
+@router.get("/eval/datasets/jobs/{job_id}", response_model=EvalDatasetJobStatusResponse)
+def get_eval_dataset_job_status(job_id: str) -> EvalDatasetJobStatusResponse:
+    store = _get_eval_signal_store()
+    job = store.get_eval_dataset_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Eval dataset job was not found.")
+    result = job.get("result")
+    return EvalDatasetJobStatusResponse(
+        job_id=job_id,
+        status=job["status"],
+        total_messages=int(job["total_messages"]),
+        processed_messages=int(job["processed_messages"]),
+        stage=job["stage"],
+        error=job.get("error"),
+        result=EvalDatasetRunResponse.model_validate(result) if result else None,
+    )
+
+
+def process_eval_dataset_job(job_id: str) -> dict[str, Any]:
+    store = _get_eval_signal_store()
+    job = store.get_eval_dataset_job(job_id)
+    if not job:
+        raise RuntimeError(f"Eval dataset job was not found: {job_id}")
+    if job["status"] == "succeeded":
+        return {"job_id": job_id, "status": "succeeded"}
+    if not store.claim_eval_dataset_job(job_id):
+        refreshed = store.get_eval_dataset_job(job_id)
+        return {"job_id": job_id, "status": refreshed["status"] if refreshed else "missing"}
+
+    try:
+        payload = EvalDatasetRunRequest.model_validate(job["request"])
+        result = _run_eval_dataset(
+            payload,
+            store=store,
+            progress=lambda processed, stage: store.update_eval_dataset_job_progress(
+                job_id=job_id,
+                processed_messages=processed,
+                stage=stage,
+            ),
+        )
+        store.complete_eval_dataset_job(
+            job_id=job_id,
+            result_json=result.model_dump(mode="json"),
+        )
+        return {"job_id": job_id, "status": "succeeded"}
+    except Exception as exc:
+        store.fail_eval_dataset_job(job_id=job_id, error=f"{type(exc).__name__}: {exc}")
+        raise
+
+
+def _run_eval_dataset(
+    payload: EvalDatasetRunRequest,
+    *,
+    store: SignalStore | None = None,
+    progress: Callable[[int, str], None] | None = None,
+) -> EvalDatasetRunResponse:
     messages = _dataset_messages(payload)
     child_user_id = payload.child_user_id or uuid4()
     device_id = payload.device_id or uuid4()
     uid = payload.uid.strip() if payload.uid and payload.uid.strip() else f"eval-{child_user_id}"
 
-    store = _get_eval_signal_store()
+    store = store or _get_eval_signal_store()
     try:
         store.save_next_integration_mapping(
             child_user_id=child_user_id,
@@ -217,6 +313,8 @@ def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
             detail=f"Signal store unavailable: {type(exc).__name__}: {exc}",
         ) from exc
 
+    if progress:
+        progress(0, "processing_messages")
     for index, message in enumerate(messages):
         occurred_at = _normalize_datetime(message.timestamp)
         request = IngestMessageRequest(
@@ -243,7 +341,11 @@ def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
                 status_code=422,
                 detail=f"Message {index + 1} failed pipeline processing: {type(exc).__name__}: {exc}",
             ) from exc
+        if progress:
+            progress(index + 1, "processing_messages")
 
+    if progress:
+        progress(len(messages), "finalizing_days")
     finalized_days = _finalize_dataset_days(
         child_user_id=child_user_id,
         days=sorted({_normalize_datetime(message.timestamp).date() for message in messages}),
@@ -252,6 +354,8 @@ def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
         send_alerts=payload.send_alerts,
         store=store,
     )
+    if progress:
+        progress(len(messages), "building_timeline")
     start_day = min(_normalize_datetime(message.timestamp).date() for message in messages)
     end_day = max(_normalize_datetime(message.timestamp).date() for message in messages)
     timeline = _build_timeline_response(
@@ -276,6 +380,43 @@ def run_eval_dataset(payload: EvalDatasetRunRequest) -> EvalDatasetRunResponse:
         runtime=_runtime_info(),
         timeline=timeline,
     )
+
+
+def _submit_eval_dataset_job(job_id: str) -> None:
+    if settings.env.lower() == "production":
+        _invoke_lambda_eval_dataset_job(job_id)
+        return
+    thread = Thread(target=_run_eval_dataset_job_in_background, args=(job_id,), daemon=True)
+    thread.start()
+
+
+def _run_eval_dataset_job_in_background(job_id: str) -> None:
+    try:
+        process_eval_dataset_job(job_id)
+    except Exception:
+        return
+
+
+def _invoke_lambda_eval_dataset_job(job_id: str) -> None:
+    function_name = os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        raise HTTPException(
+            status_code=503,
+            detail="AWS_LAMBDA_FUNCTION_NAME is missing; cannot start async Eval job.",
+        )
+    try:
+        import boto3
+
+        boto3.client("lambda").invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps({"safe_mind_eval_dataset_job_id": job_id}).encode("utf-8"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Could not start async Eval job: {type(exc).__name__}: {exc}",
+        ) from exc
 
 
 @router.get("/eval/alerts/users", response_model=EvalAlertUsersResponse)

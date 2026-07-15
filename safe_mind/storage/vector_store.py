@@ -193,6 +193,24 @@ class SQLiteVectorStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                create table if not exists eval_dataset_jobs (
+                    id text primary key,
+                    status text not null,
+                    request_json text not null,
+                    total_messages integer not null,
+                    processed_messages integer not null,
+                    stage text not null,
+                    result_json text,
+                    error text,
+                    created_at text not null,
+                    updated_at text not null,
+                    started_at text,
+                    finished_at text
+                )
+                """
+            )
 
     def ping(self) -> None:
         with self._connect() as connection:
@@ -533,6 +551,122 @@ class SQLiteVectorStore:
         with self._connect() as connection:
             row = connection.execute("select count(*) from daily_signal_scores").fetchone()
         return int(row[0])
+
+    def create_eval_dataset_job(
+        self,
+        *,
+        job_id: str,
+        request_json: dict,
+        total_messages: int,
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                insert into eval_dataset_jobs (
+                    id, status, request_json, total_messages, processed_messages, stage,
+                    result_json, error, created_at, updated_at, started_at, finished_at
+                )
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    job_id,
+                    "queued",
+                    json.dumps(request_json),
+                    total_messages,
+                    0,
+                    "queued",
+                    None,
+                    None,
+                    now,
+                    now,
+                    None,
+                    None,
+                ),
+            )
+
+    def claim_eval_dataset_job(self, job_id: str) -> bool:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                update eval_dataset_jobs
+                set status = ?, stage = ?, started_at = ?, updated_at = ?
+                where id = ? and status = ?
+                """,
+                ("running", "starting", now, now, job_id, "queued"),
+            )
+        return bool(cursor.rowcount)
+
+    def update_eval_dataset_job_progress(
+        self,
+        *,
+        job_id: str,
+        processed_messages: int,
+        stage: str,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update eval_dataset_jobs
+                set processed_messages = ?, stage = ?, updated_at = ?
+                where id = ?
+                """,
+                (processed_messages, stage, datetime.now(UTC).isoformat(), job_id),
+            )
+
+    def complete_eval_dataset_job(self, *, job_id: str, result_json: dict) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update eval_dataset_jobs
+                set status = ?, stage = ?, result_json = ?, error = null,
+                    updated_at = ?, finished_at = ?
+                where id = ?
+                """,
+                ("succeeded", "complete", json.dumps(result_json), now, now, job_id),
+            )
+
+    def fail_eval_dataset_job(self, *, job_id: str, error: str) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """
+                update eval_dataset_jobs
+                set status = ?, stage = ?, error = ?, updated_at = ?, finished_at = ?
+                where id = ?
+                """,
+                ("failed", "failed", error, now, now, job_id),
+            )
+
+    def get_eval_dataset_job(self, job_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                select id, status, request_json, total_messages, processed_messages, stage,
+                    result_json, error, created_at, updated_at, started_at, finished_at
+                from eval_dataset_jobs
+                where id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {
+            "id": row[0],
+            "status": row[1],
+            "request": json.loads(row[2]),
+            "total_messages": int(row[3]),
+            "processed_messages": int(row[4]),
+            "stage": row[5],
+            "result": json.loads(row[6]) if row[6] else None,
+            "error": row[7],
+            "created_at": row[8],
+            "updated_at": row[9],
+            "started_at": row[10],
+            "finished_at": row[11],
+        }
 
     def count_vectors(self) -> int:
         with self._connect() as connection:

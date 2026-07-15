@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 from datetime import date, datetime
 
@@ -99,6 +99,30 @@ class SignalStore(Protocol):
     ) -> AppUser: ...
 
     def count(self) -> int: ...
+
+    def create_eval_dataset_job(
+        self,
+        *,
+        job_id: str,
+        request_json: dict[str, Any],
+        total_messages: int,
+    ) -> None: ...
+
+    def claim_eval_dataset_job(self, job_id: str) -> bool: ...
+
+    def update_eval_dataset_job_progress(
+        self,
+        *,
+        job_id: str,
+        processed_messages: int,
+        stage: str,
+    ) -> None: ...
+
+    def complete_eval_dataset_job(self, *, job_id: str, result_json: dict[str, Any]) -> None: ...
+
+    def fail_eval_dataset_job(self, *, job_id: str, error: str) -> None: ...
+
+    def get_eval_dataset_job(self, job_id: str) -> dict[str, Any] | None: ...
 
 
 def get_signal_store() -> SignalStore:

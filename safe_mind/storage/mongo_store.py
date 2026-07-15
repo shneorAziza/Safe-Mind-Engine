@@ -41,6 +41,8 @@ class MongoSignalStore:
             db.app_users.create_index([("parent_phone", 1), ("external_device_id", 1)], unique=True)
             db.app_login_challenges.create_index("id", unique=True)
             db.app_login_challenges.create_index("expires_at")
+            db.eval_dataset_jobs.create_index("id", unique=True)
+            db.eval_dataset_jobs.create_index([("created_at", -1)])
             self._initialized = True
 
     def ping(self) -> None:
@@ -206,6 +208,94 @@ class MongoSignalStore:
 
     def count(self) -> int:
         return int(self._db().daily_signal_scores.count_documents({}))
+
+    def create_eval_dataset_job(
+        self,
+        *,
+        job_id: str,
+        request_json: dict[str, Any],
+        total_messages: int,
+    ) -> None:
+        now = datetime.now(UTC)
+        self._db().eval_dataset_jobs.insert_one(
+            {
+                "id": job_id,
+                "status": "queued",
+                "request": request_json,
+                "total_messages": total_messages,
+                "processed_messages": 0,
+                "stage": "queued",
+                "result": None,
+                "error": None,
+                "created_at": now,
+                "updated_at": now,
+                "started_at": None,
+                "finished_at": None,
+            }
+        )
+
+    def claim_eval_dataset_job(self, job_id: str) -> bool:
+        now = datetime.now(UTC)
+        row = self._db().eval_dataset_jobs.find_one_and_update(
+            {"id": job_id, "status": "queued"},
+            {"$set": {"status": "running", "stage": "starting", "started_at": now, "updated_at": now}},
+        )
+        return row is not None
+
+    def update_eval_dataset_job_progress(
+        self,
+        *,
+        job_id: str,
+        processed_messages: int,
+        stage: str,
+    ) -> None:
+        self._db().eval_dataset_jobs.update_one(
+            {"id": job_id},
+            {
+                "$set": {
+                    "processed_messages": processed_messages,
+                    "stage": stage,
+                    "updated_at": datetime.now(UTC),
+                }
+            },
+        )
+
+    def complete_eval_dataset_job(self, *, job_id: str, result_json: dict[str, Any]) -> None:
+        now = datetime.now(UTC)
+        self._db().eval_dataset_jobs.update_one(
+            {"id": job_id},
+            {
+                "$set": {
+                    "status": "succeeded",
+                    "stage": "complete",
+                    "result": result_json,
+                    "error": None,
+                    "updated_at": now,
+                    "finished_at": now,
+                }
+            },
+        )
+
+    def fail_eval_dataset_job(self, *, job_id: str, error: str) -> None:
+        now = datetime.now(UTC)
+        self._db().eval_dataset_jobs.update_one(
+            {"id": job_id},
+            {
+                "$set": {
+                    "status": "failed",
+                    "stage": "failed",
+                    "error": error,
+                    "updated_at": now,
+                    "finished_at": now,
+                }
+            },
+        )
+
+    def get_eval_dataset_job(self, job_id: str) -> dict[str, Any] | None:
+        row = self._db().eval_dataset_jobs.find_one({"id": job_id}, {"_id": 0})
+        if not row:
+            return None
+        return row
 
     def rebuild_daily_state(self, child_user_id: UUID) -> None:
         self._rebuild_daily_state(child_user_id)

@@ -1,6 +1,8 @@
 from datetime import date
 
 import safe_mind.lambda_finalizer as lambda_finalizer
+import safe_mind.lambda_handler as lambda_handler
+from safe_mind.api import eval_ui
 
 
 def test_lambda_finalizer_uses_event_time_and_sends_alerts(monkeypatch) -> None:
@@ -41,3 +43,18 @@ def test_lambda_finalizer_accepts_explicit_target_day(monkeypatch) -> None:
 
     assert result == {"target_day": "2026-08-15"}
     assert calls == [(date(2026, 8, 15), None, False)]
+
+
+def test_lambda_handler_processes_eval_dataset_job_event(monkeypatch) -> None:
+    calls = []
+
+    def fake_process_eval_dataset_job(job_id: str) -> dict:
+        calls.append(job_id)
+        return {"job_id": job_id, "status": "succeeded"}
+
+    monkeypatch.setattr(eval_ui, "process_eval_dataset_job", fake_process_eval_dataset_job)
+
+    result = lambda_handler.handler({"safe_mind_eval_dataset_job_id": "job-123"}, object())
+
+    assert result == {"job_id": "job-123", "status": "succeeded"}
+    assert calls == ["job-123"]

@@ -281,6 +281,13 @@ EVAL_HTML = """
       gap: 12px;
       background: var(--surface-soft);
     }
+    .workspace-actions {
+      display: flex;
+      align-items: center;
+      justify-content: end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     .tabs {
       display: inline-grid;
       grid-auto-flow: column;
@@ -309,6 +316,14 @@ EVAL_HTML = """
     .button-run:hover { background: var(--accent-strong); }
     .button-dashboard { background: #4f66b0; }
     .button-dashboard:hover { background: #3d508f; }
+    .button-export {
+      min-height: 32px;
+      padding: 0 10px;
+      border-radius: 6px;
+      background: #217346;
+      font-size: 12px;
+    }
+    .button-export:hover { background: #185c37; }
     .content {
       min-height: 0;
       overflow: auto;
@@ -334,6 +349,7 @@ EVAL_HTML = """
       color: #344054;
       text-align: center;
       padding: 26px;
+      width: min(520px, 100%);
     }
     .signal-loader {
       position: relative;
@@ -374,6 +390,47 @@ EVAL_HTML = """
       color: var(--muted);
       font-size: 13px;
       max-width: 420px;
+    }
+    .progress-panel {
+      width: min(440px, 100%);
+      display: grid;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      text-align: left;
+    }
+    .progress-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      color: #344054;
+      font-size: 12px;
+      font-weight: 760;
+    }
+    .progress-count {
+      color: var(--ink);
+      font-size: 14px;
+      font-weight: 840;
+    }
+    .progress-track {
+      height: 10px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: #e9eef3;
+    }
+    .progress-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent), #4f66b0);
+      transition: width 220ms ease;
+    }
+    .progress-stage {
+      color: var(--muted);
+      font-size: 12px;
+      overflow-wrap: anywhere;
     }
     @keyframes spin {
       to { transform: rotate(360deg); }
@@ -513,6 +570,7 @@ EVAL_HTML = """
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
+      align-items: start;
     }
     .detail-card {
       border: 1px solid var(--line);
@@ -520,6 +578,128 @@ EVAL_HTML = """
       background: #fff;
       padding: 10px;
       min-width: 0;
+    }
+    .decision-deltas {
+      display: grid;
+      gap: 7px;
+      max-height: 182px;
+      overflow: auto;
+      padding-right: 2px;
+      direction: rtl;
+      text-align: right;
+    }
+    .decision-delta-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      min-height: 34px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+      padding: 6px 8px;
+      color: #102033;
+      font-size: 13px;
+      font-weight: 760;
+      line-height: 1.25;
+    }
+    .decision-delta-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+    .decision-delta-value {
+      direction: ltr;
+      unicode-bidi: isolate;
+      white-space: nowrap;
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-weight: 860;
+    }
+    .decision-summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .decision-stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafb;
+      padding: 8px;
+      min-width: 0;
+    }
+    .decision-stat-label {
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 780;
+      text-transform: uppercase;
+      letter-spacing: 0;
+    }
+    .decision-stat-value {
+      color: var(--ink);
+      font-size: 15px;
+      font-weight: 840;
+      margin-top: 2px;
+      overflow-wrap: anywhere;
+    }
+    .change-list {
+      display: grid;
+      gap: 6px;
+    }
+    .change-row {
+      display: grid;
+      grid-template-columns: minmax(72px, 1fr) repeat(3, minmax(58px, auto));
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 7px 8px;
+    }
+    .change-label {
+      color: #102033;
+      font-size: 12px;
+      font-weight: 820;
+    }
+    .change-value {
+      color: #344054;
+      font-size: 12px;
+      font-weight: 720;
+      text-align: right;
+      white-space: nowrap;
+    }
+    .change-delta {
+      border-radius: 999px;
+      padding: 2px 7px;
+      font-weight: 840;
+      text-align: center;
+    }
+    .change-up {
+      color: var(--danger);
+      background: #fff5f5;
+      border: 1px solid #efb4b8;
+    }
+    .change-down {
+      color: #16745f;
+      background: #f1fbf7;
+      border: 1px solid #b8dacd;
+    }
+    .change-flat {
+      color: #475467;
+      background: #f8fafb;
+      border: 1px solid var(--line);
+    }
+    .reason-note {
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 9px;
+      color: #475467;
+      font-size: 12px;
+      line-height: 1.45;
+      max-height: 58px;
+      overflow: auto;
+      direction: rtl;
+      text-align: right;
     }
     .detail-value {
       color: #102033;
@@ -644,6 +824,7 @@ EVAL_HTML = """
       const [sendAlerts, setSendAlerts] = useState(false);
       const [activeView, setActiveView] = useState("dashboard");
       const [runData, setRunData] = useState(null);
+      const [runJob, setRunJob] = useState(null);
       const [timelineData, setTimelineData] = useState(null);
       const [error, setError] = useState("");
       const [loadingRun, setLoadingRun] = useState(false);
@@ -702,8 +883,9 @@ EVAL_HTML = """
           return;
         }
         setLoadingRun(true);
+        setRunJob(null);
         try {
-          const response = await fetch("/eval/datasets/run", {
+          const response = await fetch("/eval/datasets/jobs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -718,7 +900,9 @@ EVAL_HTML = """
             })
           });
           if (!response.ok) throw new Error(await response.text());
-          const data = await response.json();
+          const job = await response.json();
+          setRunJob(job);
+          const data = await pollDatasetJob(job.job_id);
           setRunData(data);
           setChildUserId(data.child_user_id);
           setTimelineData(data.timeline);
@@ -732,6 +916,34 @@ EVAL_HTML = """
           setLoadingRun(false);
         }
       }
+
+      async function pollDatasetJob(jobId) {
+        let lastStatus = null;
+        for (;;) {
+          const response = await fetch(`/eval/datasets/jobs/${encodeURIComponent(jobId)}`);
+          if (!response.ok) throw new Error(await response.text());
+          const status = await response.json();
+          lastStatus = status;
+          setRunJob(status);
+          if (status.status === "succeeded") return status.result;
+          if (status.status === "failed") {
+            throw new Error(status.error || "Dataset simulation failed.");
+          }
+          await sleep(1800);
+        }
+      }
+
+      function exportCurrentView() {
+        if (activeView === "dashboard") {
+          exportDashboardExcel(timelineData);
+          return;
+        }
+        exportRunExcel(runData);
+      }
+
+      const canExport = activeView === "dashboard"
+        ? Boolean(timelineData?.days?.length)
+        : Boolean(runData?.timeline?.days?.length);
 
       return h("div", { className: "app-shell" },
         h("header", { className: "topbar" },
@@ -766,16 +978,27 @@ EVAL_HTML = """
                 h("h2", null, activeView === "dashboard" ? "Alert Dashboard" : "Dataset Run"),
                 h("p", { className: "subtle" }, "Fixed baseline, daily drift, gate decisions, and alert delivery status.")
               ),
-              h("div", { className: "tabs" },
-                h(TabButton, { active: activeView === "dashboard", tone: "dashboard", onClick: () => setActiveView("dashboard") }, "Dashboard"),
-                h(TabButton, { active: activeView === "summary", tone: "run", onClick: () => setActiveView("summary") }, "Run")
+              h("div", { className: "workspace-actions" },
+                h("button", {
+                  type: "button",
+                  className: "button-export",
+                  disabled: !canExport,
+                  onClick: exportCurrentView
+                }, "Export Excel"),
+                h("div", { className: "tabs" },
+                  h(TabButton, { active: activeView === "dashboard", tone: "dashboard", onClick: () => setActiveView("dashboard") }, "Dashboard"),
+                  h(TabButton, { active: activeView === "summary", tone: "run", onClick: () => setActiveView("summary") }, "Run")
+                )
               )
             ),
             h("div", { className: "content" },
               loadingRun
                 ? h(LoadingState, {
                     title: "Running dataset simulation",
-                    subtitle: "Analyzing messages, rebuilding baseline state, finalizing days, and checking alert gates."
+                    subtitle: runJob
+                      ? "The server is processing the dataset in the background. You can follow the message count below."
+                      : "Queued job. The server can keep processing large datasets while this screen polls for progress.",
+                    progress: runJob
                   })
                 : loadingTimeline
                   ? h(LoadingState, {
@@ -789,6 +1012,166 @@ EVAL_HTML = """
           )
         )
       );
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    function exportDashboardExcel(data) {
+      if (!data || !data.days || !data.days.length) return;
+      const baselineDays = data.days.filter((day) => day.phase === "baseline").length;
+      const monitoringDays = data.days.filter((day) => day.phase === "monitoring").length;
+      const deviationDays = data.days.filter((day) => day.is_deviation).length;
+      const pushDays = data.days.filter((day) => day.should_send_push).length;
+      const summaryRows = [
+        ["Export type", "Alert Dashboard"],
+        ["Child user ID", data.child_user_id],
+        ["Start day", data.start_day],
+        ["End day", data.end_day],
+        ["Baseline days", baselineDays],
+        ["Monitoring days", monitoringDays],
+        ["Deviation days", deviationDays],
+        ["Push decisions", pushDays],
+        ["Baseline range", baselineRangeText(data.days)]
+      ];
+      downloadExcelFile(
+        `safe-mind-dashboard-${safeFilePart(data.child_user_id)}-${data.start_day || "start"}-${data.end_day || "end"}.xls`,
+        [
+          { title: "Summary", rows: summaryRows },
+          { title: "Daily timeline", rows: timelineExportRows(data.days) }
+        ]
+      );
+    }
+
+    function exportRunExcel(data) {
+      if (!data || !data.timeline?.days?.length) return;
+      const finalized = data.finalized_days || [];
+      const finalizedByDay = Object.fromEntries(finalized.map((item) => [item.day, item]));
+      const timelineDays = data.timeline.days || [];
+      const dryRunAlerts = finalized.filter((item) => item.alert_delivery === "dry_run").length;
+      const deviationDays = timelineDays.filter((day) => day.is_deviation).length;
+      const pushDays = timelineDays.filter((day) => day.should_send_push).length;
+      const maxStreak = timelineDays.reduce((max, day) => Math.max(max, day.deviations_in_window || 0), 0);
+      const runtime = data.runtime || {};
+      const summaryRows = [
+        ["Export type", "Dataset Run"],
+        ["Child user ID", data.child_user_id],
+        ["UID", data.uid],
+        ["Start day", data.start_day],
+        ["End day", data.end_day],
+        ["Messages processed", data.count],
+        ["Flagged days", deviationDays],
+        ["Push days", pushDays],
+        ["Max streak", maxStreak],
+        ["Dry-run alerts", dryRunAlerts],
+        ["WhatsApp sent", data.whatsapp_sent],
+        ["WhatsApp skipped", data.whatsapp_skipped],
+        ["WhatsApp failed", data.whatsapp_failed],
+        ["Analyzer provider", runtime.psychological_analyzer_provider],
+        ["Analyzer model", runtime.psychological_analyzer_model]
+      ];
+      downloadExcelFile(
+        `safe-mind-run-${safeFilePart(data.uid || data.child_user_id)}-${data.start_day || "start"}-${data.end_day || "end"}.xls`,
+        [
+          { title: "Summary", rows: summaryRows },
+          { title: "Daily timeline", rows: timelineExportRows(timelineDays, finalizedByDay) }
+        ]
+      );
+    }
+
+    function timelineExportRows(days, finalizedByDay = {}) {
+      const metricCols = metricDefinitions();
+      const headers = [
+        "Day",
+        "Phase",
+        "Message count",
+        "Deviation",
+        "Max metric streak",
+        "Push decision",
+        "Delivery",
+        "Reason",
+        ...metricCols.map((metric) => `Daily ${metric.label}`),
+        ...metricCols.map((metric) => `Baseline ${metric.label}`),
+        ...metricCols.map((metric) => `Delta ${metric.label}`)
+      ];
+      const rows = days.map((day) => {
+        const finalized = finalizedByDay[day.day] || {};
+        return [
+          day.day,
+          day.phase,
+          day.message_count ?? 0,
+          yesNo(day.is_deviation),
+          day.deviations_in_window ?? 0,
+          yesNo(day.should_send_push),
+          finalized.alert_delivery || "",
+          day.reason || "",
+          ...metricCols.map((metric) => scoreCell(day.scores, metric.key)),
+          ...metricCols.map((metric) => scoreCell(day.baseline_scores, metric.key)),
+          ...metricCols.map((metric) => deltaCell(day.scores, day.baseline_scores, metric.key))
+        ];
+      });
+      return [headers, ...rows];
+    }
+
+    function scoreCell(scores, key) {
+      if (!scores || scores[key] === null || scores[key] === undefined) return "";
+      const value = Number(scores[key]);
+      return Number.isFinite(value) ? Number(value.toFixed(3)) : "";
+    }
+
+    function deltaCell(scores, baselineScores, key) {
+      if (!scores || !baselineScores) return "";
+      const daily = Number(scores[key]);
+      const baseline = Number(baselineScores[key]);
+      if (!Number.isFinite(daily) || !Number.isFinite(baseline)) return "";
+      return Number((daily - baseline).toFixed(3));
+    }
+
+    function yesNo(value) {
+      return value ? "yes" : "no";
+    }
+
+    function safeFilePart(value) {
+      return String(value || "export").replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80) || "export";
+    }
+
+    function downloadExcelFile(filename, sections) {
+      const html = [
+        "<html xmlns:o=\\"urn:schemas-microsoft-com:office:office\\" xmlns:x=\\"urn:schemas-microsoft-com:office:excel\\" xmlns=\\"http://www.w3.org/TR/REC-html40\\">",
+        "<head><meta charset=\\"utf-8\\"><style>table{border-collapse:collapse;margin-bottom:24px;}th,td{border:1px solid #b7c0ce;padding:6px 8px;mso-number-format:'\\\\@';}th{background:#edf2f7;font-weight:700;}h2{font-family:Arial,sans-serif;font-size:16px;}</style></head>",
+        "<body>",
+        ...sections.flatMap((section) => [
+          `<h2>${escapeHtml(section.title)}</h2>`,
+          tableHtml(section.rows)
+        ]),
+        "</body></html>"
+      ].join("");
+      const blob = new Blob(["\\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function tableHtml(rows) {
+      return `<table>${rows.map((row, index) => {
+        const tag = index === 0 ? "th" : "td";
+        return `<tr>${row.map((cell) => `<${tag}>${escapeHtml(cell)}</${tag}>`).join("")}</tr>`;
+      }).join("")}</table>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
     }
 
     function DashboardControls(props) {
@@ -938,7 +1321,7 @@ EVAL_HTML = """
       );
     }
 
-    function LoadingState({ title, subtitle }) {
+    function LoadingState({ title, subtitle, progress }) {
       return h("div", { className: "loading-state" },
         h("div", { className: "loading-card" },
           h("div", { className: "signal-loader", "aria-hidden": "true" },
@@ -947,8 +1330,29 @@ EVAL_HTML = """
             h("div", { className: "signal-loader-dot" })
           ),
           h("div", { className: "loading-title" }, title),
-          h("div", { className: "loading-subtitle" }, subtitle)
+          h("div", { className: "loading-subtitle" }, subtitle),
+          progress ? h(ProgressPanel, { progress }) : null
         )
+      );
+    }
+
+    function ProgressPanel({ progress }) {
+      const processed = Number(progress.processed_messages || 0);
+      const total = Number(progress.total_messages || 0);
+      const percent = total > 0 ? Math.max(0, Math.min(100, Math.round((processed / total) * 100))) : 0;
+      return h("div", { className: "progress-panel" },
+        h("div", { className: "progress-meta" },
+          h("span", null, "Messages processed"),
+          h("span", { className: "progress-count" }, `${processed} / ${total}`)
+        ),
+        h("div", { className: "progress-track", role: "progressbar", "aria-valuemin": 0, "aria-valuemax": total, "aria-valuenow": processed },
+          h("div", { className: "progress-fill", style: { width: `${percent}%` } })
+        ),
+        h("div", { className: "progress-meta" },
+          h("span", null, `${percent}% complete`),
+          h("span", null, stageText(progress.stage || progress.status))
+        ),
+        progress.job_id ? h("div", { className: "progress-stage" }, `Job: ${progress.job_id}`) : null
       );
     }
 
@@ -1101,9 +1505,7 @@ EVAL_HTML = """
           h(DetailCard, { title: "Daily metrics" }, h(ScoreList, { scores: day.scores })),
           h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
           h(DetailCard, { title: "Decision" },
-            h("div", { className: "detail-value" }, `Messages: ${day.message_count}`),
-            h("div", { className: "detail-value" }, `Max metric streak: ${day.deviations_in_window}`),
-            h("div", { className: "detail-value" }, day.reason || "n/a")
+            h(DecisionSummary, { day })
           )
         )
       );
@@ -1243,10 +1645,7 @@ EVAL_HTML = """
           h(DetailCard, { title: "Daily metrics" }, h(ScoreList, { scores: day.scores })),
           h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
           h(DetailCard, { title: "Decision" },
-            h("div", { className: "detail-value" }, `Messages: ${day.message_count}`),
-            h("div", { className: "detail-value" }, `Max metric streak: ${day.deviations_in_window}`),
-            h("div", { className: "detail-value" }, `Delivery: ${delivery}`),
-            h("div", { className: "detail-value" }, day.reason || "n/a")
+            h(DecisionSummary, { day, delivery })
           )
         )
       );
@@ -1258,6 +1657,38 @@ EVAL_HTML = """
       if (delivery === "skipped") return h(Badge, { tone: "warn" }, "skipped");
       if (delivery === "dry_run") return h(Badge, { tone: "warn" }, "dry run");
       return h(Badge, { tone: "ok" }, "not needed");
+    }
+
+    function DecisionSummary({ day }) {
+      return h(MetricChangeList, { scores: day.scores, baselineScores: day.baseline_scores });
+    }
+
+    function MetricChangeList({ scores, baselineScores }) {
+      if (!scores || !baselineScores) {
+        return h("div", { className: "detail-value" }, "No baseline comparison available yet.");
+      }
+      return h("div", { className: "decision-deltas" },
+        decisionMetricDefinitions()
+          .map((metric) => ({
+            ...metric,
+            daily: Number(scores[metric.key]),
+            baseline: Number(baselineScores[metric.key])
+          }))
+          .filter((metric) => (
+            Number.isFinite(metric.daily)
+            && Number.isFinite(metric.baseline)
+            && Math.abs(metric.daily - metric.baseline) >= 0.05
+          ))
+          .map((metric) => {
+            const delta = metric.daily - metric.baseline;
+            return h("div", { key: metric.key, className: "decision-delta-item" },
+              h("span", { className: "decision-delta-name" }, metric.hebrew),
+              h("span", { className: `decision-delta-value ${decisionDeltaClass(metric, delta)}` },
+                `${formatDelta(delta)} מהרגיל`
+              )
+            );
+          })
+      );
     }
 
     function Stage({ stage, results }) {
@@ -1392,20 +1823,68 @@ EVAL_HTML = """
 
     function ScoreList({ scores }) {
       if (!scores) return h("span", { className: "detail-value" }, "n/a");
-      const labels = {
-        positive_emotion: "pos",
-        negative_emotion: "neg",
-        loneliness: "lonely",
-        anxiety_stress: "stress",
-        hopelessness: "hope",
-        self_worth_low: "worth",
-        risk: "risk"
-      };
       return h("div", { className: "score-list" },
-        Object.entries(labels)
-          .filter(([key]) => scores[key] !== undefined && scores[key] !== null)
-          .map(([key, label]) => h("span", { key, className: "score-chip" }, `${label}: ${Number(scores[key]).toFixed(1)}`))
+        metricDefinitions()
+          .filter((metric) => scores[metric.key] !== undefined && scores[metric.key] !== null)
+          .map((metric) => h("span", { key: metric.key, className: "score-chip" }, `${metric.short}: ${Number(scores[metric.key]).toFixed(1)}`))
       );
+    }
+
+    function metricDefinitions() {
+      return [
+        { key: "positive_emotion", short: "pos", label: "Positive" },
+        { key: "negative_emotion", short: "neg", label: "Negative" },
+        { key: "loneliness", short: "lonely", label: "Loneliness" },
+        { key: "anxiety_stress", short: "stress", label: "Stress" },
+        { key: "hopelessness", short: "hope", label: "Hopelessness" },
+        { key: "self_worth_low", short: "worth", label: "Low worth" },
+        { key: "risk", short: "risk", label: "Risk" }
+      ];
+    }
+
+    function decisionMetricDefinitions() {
+      return [
+        { key: "negative_emotion", hebrew: "רגש שלילי", concerningDirection: 1 },
+        { key: "loneliness", hebrew: "בדידות", concerningDirection: 1 },
+        { key: "anxiety_stress", hebrew: "חרדה/סטרס", concerningDirection: 1 },
+        { key: "hopelessness", hebrew: "חוסר תקווה", concerningDirection: 1 },
+        { key: "self_worth_low", hebrew: "ערך עצמי נמוך", concerningDirection: 1 },
+        { key: "risk", hebrew: "סיכון", concerningDirection: 1 },
+        { key: "positive_emotion", hebrew: "רגש חיובי", concerningDirection: -1 }
+      ];
+    }
+
+    function formatDelta(delta) {
+      if (Math.abs(delta) < 0.05) return "0.0";
+      const rounded = Number(delta.toFixed(1));
+      const formatted = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+      return `${rounded > 0 ? "+" : ""}${formatted}`;
+    }
+
+    function deltaClass(delta) {
+      if (Math.abs(delta) < 0.05) return "change-flat";
+      return delta > 0 ? "change-up" : "change-down";
+    }
+
+    function decisionDeltaClass(metric, delta) {
+      if (Math.abs(delta) < 0.05) return "change-flat";
+      const concerning = metric.concerningDirection * delta > 0;
+      return concerning ? "change-up" : "change-down";
+    }
+
+    function stageText(stage) {
+      const labels = {
+        queued: "Queued",
+        starting: "Starting",
+        running: "Running",
+        processing_messages: "Analyzing messages",
+        finalizing_days: "Finalizing days",
+        building_timeline: "Building timeline",
+        complete: "Complete",
+        succeeded: "Complete",
+        failed: "Failed"
+      };
+      return labels[stage] || stage || "Running";
     }
 
     function LabeledBlock({ title, children }) {

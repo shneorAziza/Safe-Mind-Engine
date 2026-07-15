@@ -64,7 +64,7 @@ Deployment handoff update, 2026-07-12:
 - ECR repository `safe-mind-api` exists at `415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api`.
 - Lambda image `safe-mind-api:latest` was built from `Dockerfile.lambda`, rebuilt for `linux/amd64` with `--provenance=false`, pushed to ECR, and verified with manifest media type `application/vnd.docker.distribution.manifest.v2+json`.
 - IAM role `safe-mind-lambda-role` exists.
-- Lambda function `safe-mind-api` exists, uses the ECR image, has `1024 MB` memory and `30 seconds` timeout.
+- Lambda function `safe-mind-api` exists, uses the ECR image, has `1024 MB` memory and `900 seconds` timeout.
 - API Gateway HTTP API is now the public production URL: `https://qi86pazbij.execute-api.us-east-1.amazonaws.com`.
 - Earlier Lambda Function URL `https://afucqyhyawil7snm5isif4wspq0tsndw.lambda-url.us-east-1.on.aws/` worked for health checks, but remapped `WWW-Authenticate` to `x-amzn-Remapped-www-authenticate`, so browser Basic Auth prompts did not open reliably for `/eval`. Prefer API Gateway HTTP API for the public URL.
 - `/health/live` and `/health/ready` work from the public API URL. `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.

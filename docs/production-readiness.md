@@ -24,7 +24,7 @@ https://qi86pazbij.execute-api.us-east-1.amazonaws.com
 - Lambda function: `safe-mind-api`.
 - Lambda role: `safe-mind-lambda-role`.
 - Lambda image tag: `latest`.
-- Lambda memory/timeout: `1024 MB`, `30 seconds`.
+- Lambda memory/timeout: `1024 MB`, `900 seconds`.
 - `GET /health/live` works from the public API URL.
 - `GET /health/ready` works from the public API URL and reports MongoDB storage `ok`.
 - `/eval` is enabled and protected with Basic Auth (`safemind` plus `SAFE_MIND_EVAL_AUTH_PASSWORD`).

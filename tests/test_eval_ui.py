@@ -32,6 +32,7 @@ def test_eval_page_loads() -> None:
     assert "Dataset Simulation" in response.text
     assert "CSV columns: timestamp,message" in response.text
     assert "Dataset simulation for historical monitoring" in response.text
+    assert "Export Excel" in response.text
     assert "Wanted alert days" in response.text
     assert "prompt-copy-btn" in response.text
     assert "Each run creates a fresh test user" in response.text
@@ -183,6 +184,69 @@ def test_eval_dataset_run_persists_and_finalizes_timeline(monkeypatch, tmp_path)
     assert body["timeline"]["days"][-1]["day"] == "2026-01-13"
     assert body["alerts_to_send"] >= 1
     assert any(day["alert_delivery"] == "dry_run" for day in body["finalized_days"])
+
+
+def test_eval_dataset_job_can_be_started_polled_and_processed(monkeypatch, tmp_path) -> None:
+    store = SQLiteVectorStore(tmp_path / "signals.db")
+
+    def fake_process_message(request, **kwargs):
+        high_signal = "bad" in request.text.lower()
+        scores = PsychologicalScores(
+            positive_emotion=2 if high_signal else 7,
+            negative_emotion=8 if high_signal else 2,
+            loneliness=8 if high_signal else 2,
+            anxiety_stress=8 if high_signal else 2,
+            hopelessness=7 if high_signal else 2,
+            self_worth_low=7 if high_signal else 2,
+            risk=5 if high_signal else 1,
+        )
+        features = SignalFeatures(
+            should_store=True,
+            signal_strength=0.8 if high_signal else 0.2,
+            risk_level="medium" if high_signal else "low",
+            scores=scores,
+            confidence=0.9,
+            provider="heuristic",
+        )
+        store.initialize()
+        store.save_signal_features(
+            event_id=request.event_id,
+            child_user_id=request.child_user_id,
+            device_id=request.device_id,
+            occurred_at=request.occurred_at,
+            source_app=request.source_app,
+            features=features,
+            pipeline_version="test",
+        )
+
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: store)
+    monkeypatch.setattr(eval_ui, "process_message", fake_process_message)
+    monkeypatch.setattr(eval_ui, "_submit_eval_dataset_job", lambda job_id: None)
+    client = TestClient(app)
+
+    response = client.post(
+        "/eval/datasets/jobs",
+        json={
+            "dataset_text": "timestamp,message\n2026-01-01 12:00,normal day\n2026-01-02 12:00,bad day",
+            "dataset_format": "csv",
+        },
+    )
+
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    queued = client.get(f"/eval/datasets/jobs/{job_id}")
+    assert queued.status_code == 200
+    assert queued.json()["status"] == "queued"
+
+    eval_ui.process_eval_dataset_job(job_id)
+
+    completed = client.get(f"/eval/datasets/jobs/{job_id}")
+    assert completed.status_code == 200
+    body = completed.json()
+    assert body["status"] == "succeeded"
+    assert body["processed_messages"] == 2
+    assert body["result"]["count"] == 2
+    assert body["result"]["timeline"]["days"][-1]["day"] == "2026-01-02"
 
 
 def test_eval_dataset_run_reports_configured_store_failure(monkeypatch) -> None:

@@ -195,7 +195,7 @@ Completed:
   `415019015823.dkr.ecr.us-east-1.amazonaws.com/safe-mind-api`.
 - Docker image was built from `Dockerfile.lambda`, rebuilt as `linux/amd64` with `--provenance=false`, pushed as `latest`, and verified as `application/vnd.docker.distribution.manifest.v2+json`.
 - IAM role `safe-mind-lambda-role` exists.
-- Lambda function `safe-mind-api` exists with `1024 MB` memory and `30 seconds` timeout.
+- Lambda function `safe-mind-api` exists with `1024 MB` memory and `900 seconds` timeout.
 - Production Lambda env vars were added directly on the Lambda. Explicit non-secret values are intentionally minimal:
   - `SAFE_MIND_ENV=production`
   - `SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb`
@@ -218,6 +218,13 @@ Completed:
 - `/eval` is enabled for the team and protected by Basic Auth. PowerShell auth testing with the configured eval password returned `200`.
 - Bedrock was discussed and rejected as the active model path because the user
   wants to keep the exact existing model, OpenAI `gpt-4o-mini`.
+- Large Eval datasets now run as async jobs. The Eval HTTP request stores a job
+  in MongoDB and the API Lambda invokes itself asynchronously to process the
+  messages, so the UI can poll progress instead of waiting on one long request.
+  The actual `safe-mind-api` execution role
+  `safe-mind-api-role-do9hkzoc` must allow `lambda:InvokeFunction` on the
+  `safe-mind-api` function. The policy document is stored at
+  `deploy/aws/lambda-self-invoke-policy.json`.
 
 Current deploy status, 2026-07-12 evening:
 
@@ -257,6 +264,18 @@ Verify after deployment:
 ```powershell
 curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/live
 curl https://qi86pazbij.execute-api.us-east-1.amazonaws.com/health/ready
+```
+
+If Dataset Simulation returns `Could not start async Eval job`, add self-invoke
+permission to the Lambda role:
+
+```powershell
+aws iam put-role-policy `
+  --role-name safe-mind-api-role-do9hkzoc `
+  --policy-name safe-mind-api-self-invoke `
+  --policy-document file://deploy/aws/lambda-self-invoke-policy.json `
+  --region us-east-1 `
+  --profile safe-mind-deploy
 ```
 
 Next step:
