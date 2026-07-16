@@ -226,16 +226,18 @@ Completed:
   `safe-mind-api` function. The policy document is stored at
   `deploy/aws/lambda-self-invoke-policy.json`.
 
-Current deploy status, 2026-07-12 evening:
+Current deploy status, 2026-07-16:
 
-- AWS production is live but does not include the latest local changes.
-- The production Lambda still uses the previously pushed `latest` image until a new Docker image is built, pushed to ECR, and applied with `aws lambda update-function-code`.
-- Local-only changes waiting for deployment:
-  - Eval baseline/timeline display counts baseline by signal days, not empty calendar days.
-  - Dataset Simulation creates a fresh synthetic user for every run.
-  - React Eval UI reordering, blue/green action styling, colored tabs, loading animation, copyable dataset-generation prompt, and compact expandable Run result rows.
-  - README production redeploy instructions.
-- Last local verification after the local changes: `71 passed`.
+- AWS production is live behind API Gateway HTTP API.
+- The latest code adds numeric per-message score history to daily signal records
+  and displays it compactly in Eval day details.
+- Redeployed to `safe-mind-api` Lambda on 2026-07-16.
+- ECR/Lambda image digest: `sha256:242de3f2a8e9a63068ad06be55eb80954f14d82798adf8be2486c5c74f127e65`.
+- Local verification before redeploy: `74 passed`.
+- Production verification after redeploy:
+  - `/health/live` returned `ok`.
+  - `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.
+  - unauthenticated `GET /eval` returned `401`.
 
 ## Redeploy Existing Production Lambda
 

@@ -44,7 +44,8 @@ These are implemented and tested locally, but are not live in AWS production yet
   - Run results use compact clickable rows with expandable details, like the existing dashboard timeline.
   - Run guidance explains that `Max streak = 3` is not sufficient unless at least 3 different metrics each have a 3-day streak on the same day.
 - README now includes the production redeploy command sequence.
-- Local verification: `.\.venv\Scripts\python.exe -m pytest` returned `71 passed`.
+- Daily signal records now retain numeric per-message score history for Eval review.
+- Local verification: `.\.venv\Scripts\python.exe -m pytest` returned `74 passed`.
 
 Before deploying tomorrow, run the test suite again, then build and push the
 Lambda image and run `aws lambda update-function-code`.

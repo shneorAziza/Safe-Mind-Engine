@@ -186,6 +186,62 @@ def test_eval_dataset_run_persists_and_finalizes_timeline(monkeypatch, tmp_path)
     assert any(day["alert_delivery"] == "dry_run" for day in body["finalized_days"])
 
 
+def test_eval_timeline_includes_per_message_score_history(monkeypatch, tmp_path) -> None:
+    store = SQLiteVectorStore(tmp_path / "signals.db")
+    child_user_id = uuid4()
+    device_id = uuid4()
+    occurred_at = datetime(2026, 1, 1, 9, tzinfo=UTC)
+    store.initialize()
+    store.save_signal_features(
+        event_id=uuid4(),
+        child_user_id=child_user_id,
+        device_id=device_id,
+        occurred_at=occurred_at,
+        source_app="eval",
+        features=SignalFeatures(
+            should_store=True,
+            risk_level="low",
+            scores=PsychologicalScores(negative_emotion=8),
+            confidence=0.9,
+            provider="heuristic",
+        ),
+        pipeline_version="test",
+    )
+    store.save_signal_features(
+        event_id=uuid4(),
+        child_user_id=child_user_id,
+        device_id=device_id,
+        occurred_at=occurred_at.replace(hour=11),
+        source_app="eval",
+        features=SignalFeatures(
+            should_store=True,
+            risk_level="low",
+            scores=PsychologicalScores(negative_emotion=4),
+            confidence=0.9,
+            provider="heuristic",
+        ),
+        pipeline_version="test",
+    )
+
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: store)
+    client = TestClient(app)
+
+    response = client.get(
+        "/eval/alerts/timeline",
+        params={
+            "child_user_id": str(child_user_id),
+            "start_day": "2026-01-01",
+            "days": 1,
+        },
+    )
+
+    assert response.status_code == 200
+    day = response.json()["days"][0]
+    assert day["message_count"] == 2
+    assert day["scores"]["negative_emotion"] == 6
+    assert [item["scores"]["negative_emotion"] for item in day["message_scores"]] == [8, 4]
+
+
 def test_eval_dataset_job_can_be_started_polled_and_processed(monkeypatch, tmp_path) -> None:
     store = SQLiteVectorStore(tmp_path / "signals.db")
 

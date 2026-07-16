@@ -133,6 +133,7 @@ Current policy:
 
 - first 10 signal days form a fixed personal baseline; empty calendar days do not count
 - each day gets a metric vector from that day's compact psychological scores
+- each accepted message also appends its numeric score vector to display-only daily `message_scores`
 - baseline vector is the average vector during the baseline window
 - a deviation is based on per-metric thresholds from baseline
 - an alert decision requires `3 different metrics that each reached a 3-day consecutive deviation streak on the same finalized day`
@@ -148,6 +149,7 @@ The Eval UI now covers:
 
 - large historical dataset simulation through the live pipeline
 - per-user alert dashboards with baseline, deviation, and parent-alert decisions
+- compact per-message score history inside day details
 - optional real WhatsApp delivery for finalized alert days
 
 ## Operations

@@ -579,6 +579,30 @@ EVAL_HTML = """
       padding: 10px;
       min-width: 0;
     }
+    .detail-card-wide { grid-column: 1 / -1; }
+    .score-history {
+      display: grid;
+      gap: 7px;
+      max-height: 186px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .score-history-row {
+      display: grid;
+      grid-template-columns: 74px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 7px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfd;
+    }
+    .score-history-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 820;
+      line-height: 1.3;
+    }
     .decision-deltas {
       display: grid;
       gap: 7px;
@@ -1091,6 +1115,7 @@ EVAL_HTML = """
         "Push decision",
         "Delivery",
         "Reason",
+        "Message score history",
         ...metricCols.map((metric) => `Daily ${metric.label}`),
         ...metricCols.map((metric) => `Baseline ${metric.label}`),
         ...metricCols.map((metric) => `Delta ${metric.label}`)
@@ -1106,6 +1131,7 @@ EVAL_HTML = """
           yesNo(day.should_send_push),
           finalized.alert_delivery || "",
           day.reason || "",
+          messageScoreHistoryCell(day.message_scores),
           ...metricCols.map((metric) => scoreCell(day.scores, metric.key)),
           ...metricCols.map((metric) => scoreCell(day.baseline_scores, metric.key)),
           ...metricCols.map((metric) => deltaCell(day.scores, day.baseline_scores, metric.key))
@@ -1126,6 +1152,13 @@ EVAL_HTML = """
       const baseline = Number(baselineScores[key]);
       if (!Number.isFinite(daily) || !Number.isFinite(baseline)) return "";
       return Number((daily - baseline).toFixed(3));
+    }
+
+    function messageScoreHistoryCell(messageScores) {
+      if (!Array.isArray(messageScores) || !messageScores.length) return "";
+      return messageScores
+        .map((item, index) => `M${index + 1}: ${formatScoresInline(item.scores)}`)
+        .join("\\n");
     }
 
     function yesNo(value) {
@@ -1506,13 +1539,16 @@ EVAL_HTML = """
           h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
           h(DetailCard, { title: "Decision" },
             h(DecisionSummary, { day })
+          ),
+          h(DetailCard, { title: `Message score history (${messageScoreCount(day)})`, wide: true },
+            h(MessageScoreHistory, { messageScores: day.message_scores })
           )
         )
       );
     }
 
-    function DetailCard({ title, children }) {
-      return h("div", { className: "detail-card" },
+    function DetailCard({ title, children, wide = false }) {
+      return h("div", { className: `detail-card${wide ? " detail-card-wide" : ""}` },
         h("div", { className: "box-title" }, title),
         children
       );
@@ -1646,6 +1682,9 @@ EVAL_HTML = """
           h(DetailCard, { title: "Baseline metrics" }, h(ScoreList, { scores: day.baseline_scores })),
           h(DetailCard, { title: "Decision" },
             h(DecisionSummary, { day, delivery })
+          ),
+          h(DetailCard, { title: `Message score history (${messageScoreCount(day)})`, wide: true },
+            h(MessageScoreHistory, { messageScores: day.message_scores })
           )
         )
       );
@@ -1830,6 +1869,22 @@ EVAL_HTML = """
       );
     }
 
+    function MessageScoreHistory({ messageScores }) {
+      if (!Array.isArray(messageScores) || !messageScores.length) {
+        return h("span", { className: "detail-value" }, "No per-message scores stored for this day.");
+      }
+      return h("div", { className: "score-history" },
+        messageScores.map((item, index) => h("div", { key: item.event_id || index, className: "score-history-row" },
+          h("div", { className: "score-history-label" }, `M${index + 1}`),
+          h(ScoreList, { scores: item.scores })
+        ))
+      );
+    }
+
+    function messageScoreCount(day) {
+      return Array.isArray(day?.message_scores) ? day.message_scores.length : 0;
+    }
+
     function metricDefinitions() {
       return [
         { key: "positive_emotion", short: "pos", label: "Positive" },
@@ -1926,6 +1981,14 @@ EVAL_HTML = """
         .filter(([key]) => scores[key] !== undefined && scores[key] !== null)
         .map(([key, label]) => `${label}: ${Number(scores[key]).toFixed(1)}`)
         .join(" | ");
+    }
+
+    function formatScoresInline(scores) {
+      if (!scores) return "n/a";
+      return metricDefinitions()
+        .filter((metric) => scores[metric.key] !== undefined && scores[metric.key] !== null)
+        .map((metric) => `${metric.short}-${Number(scores[metric.key]).toFixed(1)}`)
+        .join(", ");
     }
 
     function formatSigned(value) {

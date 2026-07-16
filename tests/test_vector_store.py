@@ -71,6 +71,7 @@ def test_sqlite_store_averages_multiple_messages_into_one_daily_score(tmp_path) 
     assert len(records) == 1
     assert records[0].message_count == 2
     assert records[0].scores["negative_emotion"] == 6
+    assert [item.scores["negative_emotion"] for item in records[0].message_scores] == [8, 4]
 
 
 def test_sqlite_store_ignores_duplicate_event_id(tmp_path) -> None:

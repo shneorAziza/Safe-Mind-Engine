@@ -10,7 +10,13 @@ from pydantic import BaseModel
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
 from safe_mind.embeddings.models import EmbeddingResult
-from safe_mind.storage.models import AppUser, DailySignalRecord, NextIntegrationMapping, StoredSignalIds
+from safe_mind.storage.models import (
+    AppUser,
+    DailySignalRecord,
+    MessageScoreSnapshot,
+    NextIntegrationMapping,
+    StoredSignalIds,
+)
 
 
 class SignalVectorRecord(BaseModel):
@@ -73,6 +79,7 @@ class SQLiteVectorStore:
                     day text not null,
                     message_count integer not null,
                     scores_json text not null,
+                    message_scores_json text not null default '[]',
                     baseline_day_count integer not null,
                     is_baseline_day integer not null,
                     is_flagged integer not null,
@@ -88,6 +95,12 @@ class SQLiteVectorStore:
             connection.execute(
                 "create index if not exists idx_daily_signal_scores_user_day "
                 "on daily_signal_scores(child_user_id, day)"
+            )
+            self._ensure_column(
+                connection,
+                table="daily_signal_scores",
+                column="message_scores_json",
+                definition="text not null default '[]'",
             )
             connection.execute(
                 """
@@ -332,7 +345,7 @@ class SQLiteVectorStore:
 
             row = connection.execute(
                 """
-                select id, message_count, scores_json, created_at
+                select id, message_count, scores_json, created_at, message_scores_json
                 from daily_signal_scores
                 where child_user_id = ? and day = ?
                 """,
@@ -344,28 +357,38 @@ class SQLiteVectorStore:
                 message_count = previous_count + 1
                 previous_scores = json.loads(row[2])
                 created_at = row[3]
+                message_scores = json.loads(row[4] or "[]")
             else:
                 previous_count = 0
                 message_count = 1
                 previous_scores = {key: 0.0 for key in scores}
                 created_at = now.isoformat()
+                message_scores = []
 
             averaged = {
                 key: ((float(previous_scores.get(key, 0.0)) * previous_count) + value) / message_count
                 for key, value in scores.items()
             }
+            message_scores.append(
+                {
+                    "event_id": str(event_id),
+                    "occurred_at": occurred_at.isoformat(),
+                    "scores": scores,
+                }
+            )
             connection.execute(
                 """
                 insert into daily_signal_scores (
-                    id, child_user_id, day, message_count, scores_json,
+                    id, child_user_id, day, message_count, scores_json, message_scores_json,
                     baseline_day_count, is_baseline_day,
                     is_flagged, should_send_alert, deviations_in_window,
                     alert_reason, created_at, updated_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict(child_user_id, day) do update set
                     message_count = excluded.message_count,
                     scores_json = excluded.scores_json,
+                    message_scores_json = excluded.message_scores_json,
                     updated_at = excluded.updated_at
                 """,
                 (
@@ -374,6 +397,7 @@ class SQLiteVectorStore:
                     day.isoformat(),
                     message_count,
                     json.dumps(averaged),
+                    json.dumps(message_scores),
                     0,
                     0,
                     0,
@@ -396,6 +420,7 @@ class SQLiteVectorStore:
                     day,
                     message_count,
                     scores_json,
+                    message_scores_json,
                     baseline_day_count,
                     is_baseline_day,
                     is_flagged,
@@ -418,14 +443,15 @@ class SQLiteVectorStore:
                 day=datetime.fromisoformat(row[2]).date(),
                 message_count=int(row[3]),
                 scores=json.loads(row[4]),
-                baseline_day_count=int(row[5]),
-                is_baseline_day=bool(row[6]),
-                is_flagged=bool(row[7]),
-                should_send_alert=bool(row[8]),
-                deviations_in_window=int(row[9]),
-                alert_reason=row[10],
-                created_at=datetime.fromisoformat(row[11]),
-                updated_at=datetime.fromisoformat(row[12]),
+                message_scores=_message_scores_from_json(row[5]),
+                baseline_day_count=int(row[6]),
+                is_baseline_day=bool(row[7]),
+                is_flagged=bool(row[8]),
+                should_send_alert=bool(row[9]),
+                deviations_in_window=int(row[10]),
+                alert_reason=row[11],
+                created_at=datetime.fromisoformat(row[12]),
+                updated_at=datetime.fromisoformat(row[13]),
             )
             for row in rows
         ]
@@ -899,6 +925,21 @@ class SQLiteVectorStore:
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
 
+    def _ensure_column(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        table: str,
+        column: str,
+        definition: str,
+    ) -> None:
+        columns = {
+            str(row[1])
+            for row in connection.execute(f"pragma table_info({table})").fetchall()
+        }
+        if column not in columns:
+            connection.execute(f"alter table {table} add column {column} {definition}")
+
     def _rebuild_daily_state(self, child_user_id: UUID) -> None:
         records, baseline_scores, _baseline_score = rebuild_daily_alert_state(
             self.list_signal_records_for_child(child_user_id)
@@ -982,3 +1023,20 @@ def _app_user_from_row(row: tuple | None) -> AppUser | None:
         created_at=datetime.fromisoformat(row[6]),
         updated_at=datetime.fromisoformat(row[7]),
     )
+
+
+def _message_scores_from_json(value: str | None) -> list[MessageScoreSnapshot]:
+    if not value:
+        return []
+    rows = json.loads(value)
+    if not isinstance(rows, list):
+        return []
+    snapshots: list[MessageScoreSnapshot] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            snapshots.append(MessageScoreSnapshot.model_validate(row))
+        except Exception:
+            continue
+    return snapshots

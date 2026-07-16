@@ -6,7 +6,13 @@ from uuid import UUID, uuid4
 from safe_mind.alerts.engine import rebuild_daily_alert_state, score_dict_from_model
 from safe_mind.alerts.models import ParentAlertDecision
 from safe_mind.analysis.models import SignalFeatures
-from safe_mind.storage.models import AppUser, DailySignalRecord, NextIntegrationMapping, StoredSignalIds
+from safe_mind.storage.models import (
+    AppUser,
+    DailySignalRecord,
+    MessageScoreSnapshot,
+    NextIntegrationMapping,
+    StoredSignalIds,
+)
 
 
 class MongoSignalStore:
@@ -103,7 +109,9 @@ class MongoSignalStore:
                 daily_id=daily_id,
                 child_user_id=child_user_id,
                 day=day,
+                event_id=event_id,
                 scores=scores,
+                occurred_at=occurred_at,
                 now=now,
             ),
             upsert=True,
@@ -135,6 +143,7 @@ class MongoSignalStore:
                 updated_at=_as_datetime(row["updated_at"]),
                 message_count=int(row["message_count"]),
                 scores={key: float(value) for key, value in row["scores"].items()},
+                message_scores=_message_scores_from_rows(row.get("message_scores", [])),
                 baseline_day_count=int(row.get("baseline_day_count", 0)),
                 is_baseline_day=bool(row.get("is_baseline_day", False)),
                 is_flagged=bool(row.get("is_flagged", False)),
@@ -596,7 +605,9 @@ def _atomic_daily_average_update(
     daily_id: str,
     child_user_id: UUID,
     day: date,
+    event_id: UUID,
     scores: dict[str, float],
+    occurred_at: datetime,
     now: datetime,
 ) -> list[dict[str, Any]]:
     previous_count = {"$ifNull": ["$message_count", 0]}
@@ -628,6 +639,18 @@ def _atomic_daily_average_update(
                 "day": day.isoformat(),
                 "message_count": next_count,
                 "scores": averaged_scores,
+                "message_scores": {
+                    "$concatArrays": [
+                        {"$ifNull": ["$message_scores", []]},
+                        [
+                            {
+                                "event_id": str(event_id),
+                                "occurred_at": occurred_at,
+                                "scores": scores,
+                            }
+                        ],
+                    ]
+                },
                 "updated_at": now,
                 "created_at": {"$ifNull": ["$created_at", now]},
                 "baseline_day_count": {"$ifNull": ["$baseline_day_count", 0]},
@@ -639,6 +662,20 @@ def _atomic_daily_average_update(
             }
         }
     ]
+
+
+def _message_scores_from_rows(rows: Any) -> list[MessageScoreSnapshot]:
+    if not isinstance(rows, list):
+        return []
+    snapshots: list[MessageScoreSnapshot] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        try:
+            snapshots.append(MessageScoreSnapshot.model_validate(row))
+        except Exception:
+            continue
+    return snapshots
 
 
 def _is_duplicate_key_error(exc: Exception) -> bool:

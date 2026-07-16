@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from safe_mind.storage.models import MessageScoreSnapshot
+
 
 AlertDecisionReason = Literal[
     "no_signals",
@@ -51,6 +53,7 @@ class AlertTimelineDay(BaseModel):
     phase: TimelinePhase
     message_count: int = Field(default=0, ge=0)
     scores: dict[str, float] | None = None
+    message_scores: list[MessageScoreSnapshot] = Field(default_factory=list)
     baseline_scores: dict[str, float] | None = None
     baseline_day_count: int = Field(default=0, ge=0)
     is_deviation: bool = False

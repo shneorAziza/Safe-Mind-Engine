@@ -166,7 +166,7 @@ Expected alert decision days for that pattern:
 - `2026-01-19`
 - `2026-01-26`
 
-Model scoring can still move outcomes when OpenAI analysis is used. If no alert appears, inspect the Run details or dashboard per-day metric scores and confirm the same 3 metrics are deviating for 3 consecutive days.
+Model scoring can still move outcomes when OpenAI analysis is used. If no alert appears, inspect the Run details or dashboard per-day metric scores and confirm the same 3 metrics are deviating for 3 consecutive days. Day details also include a compact per-message score history so reviewers can compare each message score with the stored daily average.
 
 ## API
 
@@ -177,6 +177,10 @@ POST /eval/datasets/run
 GET /eval/alerts/users
 GET /eval/alerts/timeline
 ```
+
+Timeline day responses include `scores` for the daily average and
+`message_scores` for numeric per-message score history. `message_scores` is
+display-only in Eval and contains event ids, timestamps, and score vectors.
 
 `POST /eval/datasets/run` request shape:
 
@@ -207,3 +211,7 @@ GET /eval/alerts/timeline
 The Eval UI intentionally accepts raw message text for internal testing.
 
 It must remain an internal authenticated tool. Do not use real child messages unless the data handling and consent requirements for that environment have been approved.
+
+Stored day-level score history remains numeric only. Do not add raw message text,
+redacted text, model summaries, quotes, or evidence snippets to daily timeline
+records.

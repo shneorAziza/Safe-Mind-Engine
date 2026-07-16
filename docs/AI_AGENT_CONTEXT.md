@@ -69,6 +69,11 @@ Deployment handoff update, 2026-07-12:
 - Earlier Lambda Function URL `https://afucqyhyawil7snm5isif4wspq0tsndw.lambda-url.us-east-1.on.aws/` worked for health checks, but remapped `WWW-Authenticate` to `x-amzn-Remapped-www-authenticate`, so browser Basic Auth prompts did not open reliably for `/eval`. Prefer API Gateway HTTP API for the public URL.
 - `/health/live` and `/health/ready` work from the public API URL. `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.
 - `/eval` is enabled in production and is protected by Basic Auth. PowerShell verification with an `Authorization: Basic ...` header returned `200`.
+- On 2026-07-16, production was redeployed with numeric per-message score
+  history and Eval day-detail display. The Lambda code digest after deploy was
+  `sha256:242de3f2a8e9a63068ad06be55eb80954f14d82798adf8be2486c5c74f127e65`;
+  public `/health/live` and `/health/ready` passed, and unauthenticated
+  `GET /eval` returned `401`.
 - The current Lambda environment intentionally uses a minimal set of explicit variables plus secrets:
   - `SAFE_MIND_ENV=production`
   - `SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb`
@@ -86,15 +91,15 @@ Deployment handoff update, 2026-07-12:
 - Active production model provider must stay OpenAI using `gpt-4o-mini`; do not switch the active deployment path to Bedrock/Claude.
 - Bedrock support exists in code as an optional future provider, but it is not the current production configuration.
 
-Local-only handoff update, 2026-07-12 evening:
+Local handoff update, 2026-07-16:
 
-- The AWS production Lambda is still running the previously deployed ECR image. The changes below are local only until a new image is built, pushed to ECR, and applied with `aws lambda update-function-code`.
+- AWS production was redeployed from the ECR `latest` image after Docker build, ECR push, and `aws lambda update-function-code`.
 - `README.md` now documents the production redeploy flow: Docker build, ECR push, Lambda code update, and public health verification.
 - Eval timeline baseline display now counts baseline by signal days, not empty calendar days. Empty days before the baseline is complete remain `pre_baseline`.
 - React Eval Dataset Simulation now creates a fresh synthetic test user on every run instead of reusing the currently selected dashboard child user. This prevents mixed message counts and daily averages between Eval runs.
-- React Eval UI changes are local only: `Safe Mind` title, Dataset Simulation first, existing-user dashboard loader second, Run green / Dashboard blue styling, matching colored tabs, large loading animation, copyable AI dataset prompt, fresh-user note, and compact clickable Run result rows with expandable details.
+- React Eval UI changes include: `Safe Mind` title, Dataset Simulation first, existing-user dashboard loader second, Run green / Dashboard blue styling, matching colored tabs, large loading animation, copyable AI dataset prompt, fresh-user note, compact clickable Run result rows with expandable details, and compact per-message score history in day details.
 - Run result guidance now clarifies that `Max streak = 3` alone is not enough. The alert gate requires at least 3 different metrics to each have a 3-day streak on the same finalized day.
-- Local verification after these changes: `71 passed`.
+- Local verification after these changes: `74 passed`.
 
 ## Psychological Metrics
 
@@ -123,6 +128,11 @@ If another message arrives on the same day, the system updates the existing dail
 ```text
 new_average = (old_average * old_message_count + new_message_score) / (old_message_count + 1)
 ```
+
+The same daily record also stores `message_scores`, a numeric-only history of
+the individual score vector for each accepted message on that day. This is for
+internal review in Eval and does not affect alert calculations beyond the daily
+average.
 
 No raw text, redacted text, model summary, quote, or evidence phrase is stored.
 
@@ -186,12 +196,21 @@ created_at
 updated_at
 message_count
 scores
+message_scores
 baseline_day_count
 is_baseline_day
 is_flagged
 deviations_in_window
 should_send_alert
 alert_reason
+```
+
+`message_scores` entries contain:
+
+```text
+event_id
+occurred_at
+scores
 ```
 
 ### `message_events`
@@ -420,7 +439,7 @@ Run tests:
 Current expected result:
 
 ```text
-71 passed
+74 passed
 ```
 
 ## Privacy Rules

@@ -143,6 +143,7 @@ def build_alert_timeline(
                 ),
                 message_count=record.message_count if record else 0,
                 scores=record.scores if record else None,
+                message_scores=record.message_scores if record else [],
                 baseline_scores=baseline_scores
                 if record and not record.is_baseline_day and baseline_scores
                 else None,

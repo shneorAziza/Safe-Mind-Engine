@@ -18,6 +18,12 @@ class StoredSignalIds(BaseModel):
     daily_score_id: str
 
 
+class MessageScoreSnapshot(BaseModel):
+    event_id: UUID
+    occurred_at: datetime
+    scores: dict[str, float]
+
+
 class DailySignalRecord(BaseModel):
     id: str
     child_user_id: UUID
@@ -26,6 +32,7 @@ class DailySignalRecord(BaseModel):
     updated_at: datetime
     message_count: int = Field(ge=1)
     scores: dict[str, float]
+    message_scores: list[MessageScoreSnapshot] = Field(default_factory=list)
     baseline_day_count: int = Field(default=0, ge=0)
     is_baseline_day: bool = False
     is_flagged: bool = False
