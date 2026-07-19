@@ -22,6 +22,7 @@ class MessageScoreSnapshot(BaseModel):
     event_id: UUID
     occurred_at: datetime
     scores: dict[str, float]
+    message_text: str | None = None
 
 
 class DailySignalRecord(BaseModel):

@@ -62,6 +62,7 @@ def process_message(
     create_vector: bool | None = None,
     allow_model_fallback: bool = True,
     signal_store: SignalStore | None = None,
+    eval_message_text: str | None = None,
 ) -> MessagePipelineResult:
     logs: list[PipelineLogEntry] = []
     requested_vector = persist if create_vector is None else create_vector
@@ -144,6 +145,7 @@ def process_message(
                 payload,
                 psychological_analysis.features,
                 store=signal_store,
+                eval_message_text=eval_message_text,
             )
         if debug:
             logs.append(
@@ -287,6 +289,7 @@ def _store_signal_features(
     features: SignalFeatures,
     *,
     store: SignalStore | None = None,
+    eval_message_text: str | None = None,
 ) -> StoredSignal:
     active_store = store or get_signal_store()
     active_store.initialize()
@@ -298,6 +301,7 @@ def _store_signal_features(
         source_app=payload.source_app,
         features=features,
         pipeline_version=settings.pipeline_version,
+        eval_message_text=eval_message_text,
     )
     return StoredSignal(
         stored=True,

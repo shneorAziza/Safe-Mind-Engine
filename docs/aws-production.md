@@ -237,6 +237,19 @@ Current deploy status, 2026-07-16:
 - Production verification after redeploy:
   - `/health/live` returned `ok`.
   - `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.
+
+Current deploy status, 2026-07-19:
+
+- Redeployed to `safe-mind-api` Lambda with Eval simulator message text display
+  for per-message score history and Excel export, including in-cell line breaks
+  for `M1`, `M2`, and later entries.
+- ECR/Lambda image digest: `sha256:887734e5eb614cff23473525127dd83d0c4c73bf8f988b8b970775964fae77af`.
+- Local verification before redeploy: `76 passed`.
+- Production verification after redeploy:
+  - `/health/live` returned `status=ok`.
+  - `/health/ready` returned `env=production`, `signal_store_provider=mongodb`, and `storage=ok`.
+  - unauthenticated `GET /eval` returned `401`.
+  - authenticated Eval page included `Eval message text history` and `mso-data-placement:same-cell` for Excel in-cell line breaks.
   - unauthenticated `GET /eval` returned `401`.
 
 ## Redeploy Existing Production Lambda

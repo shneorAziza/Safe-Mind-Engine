@@ -179,8 +179,9 @@ GET /eval/alerts/timeline
 ```
 
 Timeline day responses include `scores` for the daily average and
-`message_scores` for numeric per-message score history. `message_scores` is
-display-only in Eval and contains event ids, timestamps, and score vectors.
+`message_scores` for per-message score history. For Eval simulator messages,
+`message_scores` also includes `message_text`; clicking `M1`, `M2`, and so on
+in day details reveals the test text that created that score.
 
 `POST /eval/datasets/run` request shape:
 
@@ -212,6 +213,6 @@ The Eval UI intentionally accepts raw message text for internal testing.
 
 It must remain an internal authenticated tool. Do not use real child messages unless the data handling and consent requirements for that environment have been approved.
 
-Stored day-level score history remains numeric only. Do not add raw message text,
-redacted text, model summaries, quotes, or evidence snippets to daily timeline
-records.
+Real ingestion paths must keep stored day-level score history numeric only. The
+only approved text-retention exception is `message_text` for messages entered
+through the authenticated Eval simulator.

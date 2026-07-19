@@ -33,6 +33,10 @@ def test_eval_page_loads() -> None:
     assert "CSV columns: timestamp,message" in response.text
     assert "Dataset simulation for historical monitoring" in response.text
     assert "Export Excel" in response.text
+    assert "Eval message text history" in response.text
+    assert "messageTextHistoryCell" in response.text
+    assert "excelCellHtml" in response.text
+    assert "mso-data-placement:same-cell" in response.text
     assert "Wanted alert days" in response.text
     assert "prompt-copy-btn" in response.text
     assert "Each run creates a fresh test user" in response.text
@@ -206,6 +210,7 @@ def test_eval_timeline_includes_per_message_score_history(monkeypatch, tmp_path)
             provider="heuristic",
         ),
         pipeline_version="test",
+        eval_message_text="I feel very bad today.",
     )
     store.save_signal_features(
         event_id=uuid4(),
@@ -240,6 +245,54 @@ def test_eval_timeline_includes_per_message_score_history(monkeypatch, tmp_path)
     assert day["message_count"] == 2
     assert day["scores"]["negative_emotion"] == 6
     assert [item["scores"]["negative_emotion"] for item in day["message_scores"]] == [8, 4]
+    assert [item.get("message_text") for item in day["message_scores"]] == [
+        "I feel very bad today.",
+        None,
+    ]
+
+
+def test_eval_dataset_pipeline_receives_eval_message_text(monkeypatch, tmp_path) -> None:
+    store = SQLiteVectorStore(tmp_path / "signals.db")
+    received_eval_texts = []
+
+    def fake_process_message(request, **kwargs):
+        received_eval_texts.append(kwargs.get("eval_message_text"))
+        scores = PsychologicalScores(negative_emotion=8)
+        features = SignalFeatures(
+            should_store=True,
+            risk_level="low",
+            scores=scores,
+            confidence=0.9,
+            provider="heuristic",
+        )
+        store.initialize()
+        store.save_signal_features(
+            event_id=request.event_id,
+            child_user_id=request.child_user_id,
+            device_id=request.device_id,
+            occurred_at=request.occurred_at,
+            source_app=request.source_app,
+            features=features,
+            pipeline_version="test",
+            eval_message_text=kwargs.get("eval_message_text"),
+        )
+
+    monkeypatch.setattr(eval_ui, "get_signal_store", lambda: store)
+    monkeypatch.setattr(eval_ui, "process_message", fake_process_message)
+    client = TestClient(app)
+
+    response = client.post(
+        "/eval/datasets/run",
+        json={
+            "dataset_text": "timestamp,message\n2026-01-01 12:00,complex eval text",
+            "dataset_format": "csv",
+        },
+    )
+
+    assert response.status_code == 200
+    assert received_eval_texts == ["complex eval text"]
+    day = response.json()["timeline"]["days"][0]
+    assert day["message_scores"][0]["message_text"] == "complex eval text"
 
 
 def test_eval_dataset_job_can_be_started_polled_and_processed(monkeypatch, tmp_path) -> None:

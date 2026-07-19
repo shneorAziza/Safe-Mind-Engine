@@ -26,6 +26,7 @@ class SignalStore(Protocol):
         source_app: str | None,
         features: SignalFeatures,
         pipeline_version: str,
+        eval_message_text: str | None = None,
     ) -> StoredSignalIds: ...
 
     def list_signal_records_for_child(self, child_user_id: UUID) -> list[DailySignalRecord]: ...

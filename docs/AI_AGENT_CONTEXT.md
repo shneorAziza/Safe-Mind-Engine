@@ -74,6 +74,14 @@ Deployment handoff update, 2026-07-12:
   `sha256:242de3f2a8e9a63068ad06be55eb80954f14d82798adf8be2486c5c74f127e65`;
   public `/health/live` and `/health/ready` passed, and unauthenticated
   `GET /eval` returned `401`.
+- On 2026-07-19, production was redeployed with Eval simulator `message_text`
+  display for per-message score history and Excel export, including in-cell
+  line breaks for `M1`, `M2`, and later entries. The Lambda code digest after
+  deploy was
+  `sha256:887734e5eb614cff23473525127dd83d0c4c73bf8f988b8b970775964fae77af`;
+  public health checks passed, unauthenticated `GET /eval` returned `401`, and
+  authenticated Eval UI verification found `Eval message text history` and
+  `mso-data-placement:same-cell`.
 - The current Lambda environment intentionally uses a minimal set of explicit variables plus secrets:
   - `SAFE_MIND_ENV=production`
   - `SAFE_MIND_SIGNAL_STORE_PROVIDER=mongodb`
@@ -129,12 +137,15 @@ If another message arrives on the same day, the system updates the existing dail
 new_average = (old_average * old_message_count + new_message_score) / (old_message_count + 1)
 ```
 
-The same daily record also stores `message_scores`, a numeric-only history of
+The same daily record also stores `message_scores`, a per-message history of
 the individual score vector for each accepted message on that day. This is for
 internal review in Eval and does not affect alert calculations beyond the daily
 average.
 
-No raw text, redacted text, model summary, quote, or evidence phrase is stored.
+Real ingestion paths store no raw text, redacted text, model summary, quote, or
+evidence phrase. The authenticated Eval simulator is the only exception: it may
+store `message_text` beside the matching score snapshot for synthetic/manual
+Eval messages.
 
 ## Baseline and Alert Logic
 
@@ -211,6 +222,7 @@ alert_reason
 event_id
 occurred_at
 scores
+message_text (Eval simulator messages only)
 ```
 
 ### `message_events`

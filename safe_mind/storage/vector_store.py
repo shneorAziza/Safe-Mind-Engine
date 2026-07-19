@@ -288,7 +288,8 @@ class SQLiteVectorStore:
         source_app: str | None,
         features: SignalFeatures,
         pipeline_version: str,
-    ) -> str:
+        eval_message_text: str | None = None,
+    ) -> StoredSignalIds:
         day = occurred_at.date()
         scores = score_dict_from_model(features.scores)
         now = datetime.now(UTC)
@@ -369,13 +370,14 @@ class SQLiteVectorStore:
                 key: ((float(previous_scores.get(key, 0.0)) * previous_count) + value) / message_count
                 for key, value in scores.items()
             }
-            message_scores.append(
-                {
-                    "event_id": str(event_id),
-                    "occurred_at": occurred_at.isoformat(),
-                    "scores": scores,
-                }
-            )
+            message_score = {
+                "event_id": str(event_id),
+                "occurred_at": occurred_at.isoformat(),
+                "scores": scores,
+            }
+            if eval_message_text is not None:
+                message_score["message_text"] = eval_message_text
+            message_scores.append(message_score)
             connection.execute(
                 """
                 insert into daily_signal_scores (

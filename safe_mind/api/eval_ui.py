@@ -196,6 +196,7 @@ def run_eval(payload: EvalRunRequest) -> EvalRunResponse:
             persist=payload.persist,
             create_vector=payload.create_vector,
             allow_model_fallback=False,
+            eval_message_text=message,
         )
         results.append(
             {
@@ -335,6 +336,7 @@ def _run_eval_dataset(
                 create_vector=False,
                 allow_model_fallback=False,
                 signal_store=store,
+                eval_message_text=message.message,
             )
         except Exception as exc:
             raise HTTPException(

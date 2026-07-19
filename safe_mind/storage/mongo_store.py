@@ -64,6 +64,7 @@ class MongoSignalStore:
         source_app: str | None,
         features: SignalFeatures,
         pipeline_version: str,
+        eval_message_text: str | None = None,
     ) -> StoredSignalIds:
         day = occurred_at.date()
         scores = score_dict_from_model(features.scores)
@@ -113,6 +114,7 @@ class MongoSignalStore:
                 scores=scores,
                 occurred_at=occurred_at,
                 now=now,
+                eval_message_text=eval_message_text,
             ),
             upsert=True,
         )
@@ -609,6 +611,7 @@ def _atomic_daily_average_update(
     scores: dict[str, float],
     occurred_at: datetime,
     now: datetime,
+    eval_message_text: str | None = None,
 ) -> list[dict[str, Any]]:
     previous_count = {"$ifNull": ["$message_count", 0]}
     next_count = {"$add": [previous_count, 1]}
@@ -631,6 +634,13 @@ def _atomic_daily_average_update(
         }
         for key, value in scores.items()
     }
+    message_score: dict[str, Any] = {
+        "event_id": str(event_id),
+        "occurred_at": occurred_at,
+        "scores": scores,
+    }
+    if eval_message_text is not None:
+        message_score["message_text"] = eval_message_text
     return [
         {
             "$set": {
@@ -642,13 +652,7 @@ def _atomic_daily_average_update(
                 "message_scores": {
                     "$concatArrays": [
                         {"$ifNull": ["$message_scores", []]},
-                        [
-                            {
-                                "event_id": str(event_id),
-                                "occurred_at": occurred_at,
-                                "scores": scores,
-                            }
-                        ],
+                        [message_score],
                     ]
                 },
                 "updated_at": now,

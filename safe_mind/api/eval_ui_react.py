@@ -598,10 +598,34 @@ EVAL_HTML = """
       background: #fbfcfd;
     }
     .score-history-label {
+      border: 1px solid #c7ccd3;
+      border-radius: 6px;
+      background: #fff;
       color: var(--muted);
       font-size: 11px;
       font-weight: 820;
       line-height: 1.3;
+      min-height: 28px;
+      padding: 0 8px;
+      cursor: pointer;
+    }
+    .score-history-label:hover,
+    .score-history-label-active {
+      background: #eef2f5;
+      color: var(--ink);
+    }
+    .score-history-text {
+      grid-column: 1 / -1;
+      border-top: 1px solid var(--line);
+      margin-top: 2px;
+      padding-top: 7px;
+      color: #102033;
+      font-size: 13px;
+      line-height: 1.45;
+      direction: rtl;
+      text-align: right;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
     }
     .decision-deltas {
       display: grid;
@@ -1116,6 +1140,7 @@ EVAL_HTML = """
         "Delivery",
         "Reason",
         "Message score history",
+        "Eval message text history",
         ...metricCols.map((metric) => `Daily ${metric.label}`),
         ...metricCols.map((metric) => `Baseline ${metric.label}`),
         ...metricCols.map((metric) => `Delta ${metric.label}`)
@@ -1132,6 +1157,7 @@ EVAL_HTML = """
           finalized.alert_delivery || "",
           day.reason || "",
           messageScoreHistoryCell(day.message_scores),
+          messageTextHistoryCell(day.message_scores),
           ...metricCols.map((metric) => scoreCell(day.scores, metric.key)),
           ...metricCols.map((metric) => scoreCell(day.baseline_scores, metric.key)),
           ...metricCols.map((metric) => deltaCell(day.scores, day.baseline_scores, metric.key))
@@ -1161,6 +1187,14 @@ EVAL_HTML = """
         .join("\\n");
     }
 
+    function messageTextHistoryCell(messageScores) {
+      if (!Array.isArray(messageScores) || !messageScores.length) return "";
+      return messageScores
+        .map((item, index) => item.message_text ? `M${index + 1}: ${item.message_text}` : "")
+        .filter(Boolean)
+        .join("\\n");
+    }
+
     function yesNo(value) {
       return value ? "yes" : "no";
     }
@@ -1172,7 +1206,7 @@ EVAL_HTML = """
     function downloadExcelFile(filename, sections) {
       const html = [
         "<html xmlns:o=\\"urn:schemas-microsoft-com:office:office\\" xmlns:x=\\"urn:schemas-microsoft-com:office:excel\\" xmlns=\\"http://www.w3.org/TR/REC-html40\\">",
-        "<head><meta charset=\\"utf-8\\"><style>table{border-collapse:collapse;margin-bottom:24px;}th,td{border:1px solid #b7c0ce;padding:6px 8px;mso-number-format:'\\\\@';}th{background:#edf2f7;font-weight:700;}h2{font-family:Arial,sans-serif;font-size:16px;}</style></head>",
+        "<head><meta charset=\\"utf-8\\"><style>table{border-collapse:collapse;margin-bottom:24px;}th,td{border:1px solid #b7c0ce;padding:6px 8px;mso-number-format:'\\\\@';white-space:normal;vertical-align:top;}th{background:#edf2f7;font-weight:700;}h2{font-family:Arial,sans-serif;font-size:16px;}</style></head>",
         "<body>",
         ...sections.flatMap((section) => [
           `<h2>${escapeHtml(section.title)}</h2>`,
@@ -1194,8 +1228,12 @@ EVAL_HTML = """
     function tableHtml(rows) {
       return `<table>${rows.map((row, index) => {
         const tag = index === 0 ? "th" : "td";
-        return `<tr>${row.map((cell) => `<${tag}>${escapeHtml(cell)}</${tag}>`).join("")}</tr>`;
+        return `<tr>${row.map((cell) => `<${tag}>${excelCellHtml(cell)}</${tag}>`).join("")}</tr>`;
       }).join("")}</table>`;
+    }
+
+    function excelCellHtml(value) {
+      return escapeHtml(value).replace(/\\r?\\n/g, "<br style=\\"mso-data-placement:same-cell;\\">");
     }
 
     function escapeHtml(value) {
@@ -1870,14 +1908,28 @@ EVAL_HTML = """
     }
 
     function MessageScoreHistory({ messageScores }) {
+      const [selectedIndex, setSelectedIndex] = useState(null);
       if (!Array.isArray(messageScores) || !messageScores.length) {
         return h("span", { className: "detail-value" }, "No per-message scores stored for this day.");
       }
       return h("div", { className: "score-history" },
-        messageScores.map((item, index) => h("div", { key: item.event_id || index, className: "score-history-row" },
-          h("div", { className: "score-history-label" }, `M${index + 1}`),
-          h(ScoreList, { scores: item.scores })
-        ))
+        messageScores.map((item, index) => {
+          const isSelected = selectedIndex === index;
+          return h("div", { key: item.event_id || index, className: "score-history-row" },
+            h("button", {
+              type: "button",
+              className: `score-history-label${isSelected ? " score-history-label-active" : ""}`,
+              onClick: () => setSelectedIndex(isSelected ? null : index),
+              title: "Show Eval simulator message text"
+            }, `M${index + 1}`),
+            h(ScoreList, { scores: item.scores }),
+            isSelected
+              ? h("div", { className: "score-history-text" },
+                  item.message_text || "No Eval simulator text stored for this score."
+                )
+              : null
+          );
+        })
       );
     }
 

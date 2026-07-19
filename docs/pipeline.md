@@ -122,7 +122,8 @@ Important outputs:
 - `scores.self_worth_low`
 - `scores.risk`
 
-No summary, evidence phrase, quote, raw text, or redacted text is stored.
+No summary, evidence phrase, quote, raw text, or redacted text is stored for
+real child-message ingestion.
 `signal_strength` is stored as metadata, while the alert engine uses the compact scores.
 
 ## Stage 3: Signal Storage
@@ -143,6 +144,10 @@ The following are not stored:
 - redacted text
 - summary text
 - quotes
+
+Exception: the authenticated Eval simulator may attach `message_text` to the
+matching `message_scores` entry for synthetic/manual Eval messages. App,
+integration, and internal ingestion endpoints do not pass this field.
 
 ## Stage 4: Closed-Day Trend and Alert Decision
 
